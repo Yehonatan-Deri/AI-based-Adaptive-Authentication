@@ -17,7 +17,7 @@ import pandas as pd
 
 df = pd.read_csv('data.csv')
 # remove the first row
-row_df = df.iloc[1:] # check if needed !!
+row_df = df.iloc[1:]  # check if needed !!
 # reverse the order of the rows
 rev_df = row_df.iloc[::-1]
 # reset the index

@@ -71,6 +71,27 @@ if __name__ == "__main__":
 
     df['user_id'].value_counts()
 
+    # region Calculate time difference of related events
+    # Filter Start and Finish Events
+    start_events = df[df['log_type'] == 'Starting auth']
+    finish_events = df[df['log_type'] == 'Finishing auth']
+
+    # Merge Start and Finish Events based on 'auth_id'
+    merged_data = start_events.merge(finish_events, on='auth_id', suffixes=('_start', '_finish'))
+
+    # Calculate time difference
+    merged_data['@timestamp_start'] = pd.to_datetime(merged_data['@timestamp_start'], format=datetime_format)
+    merged_data['@timestamp_finish'] = pd.to_datetime(merged_data['@timestamp_finish'], format=datetime_format)
+    merged_data['time_difference'] = (merged_data['@timestamp_finish'] - merged_data['@timestamp_start']).dt.total_seconds()
+
+    # Calculate average login time per user:
+    avg_login_time_per_user = merged_data.groupby('user_id')['time_taken_seconds'].mean().reset_index()
+    avg_login_time_per_user.columns = ['user_id', 'avg_login_time_seconds']
+
+    # Merge this information back into the main user_profiles DataFrame
+    user_profiles_df = user_profiles_df.merge(avg_login_time_per_user, on='user_id', how='left')
+
+    # endregion
 
     # Feature Engineering
     df['@timestamp'] = pd.to_datetime(df['@timestamp'], format=datetime_format)
@@ -81,8 +102,7 @@ if __name__ == "__main__":
     features = ['time_difference', 'user_agent.device.name', 'user_agent.os.full', 'user_id']
     X = df[features]
 
-
-    # separate the data for each user_id and store them in a dictionary
+    # separate the data for each user_id and store  them in a dictionary
     user_data = {}
     for user_id in df['user_id'].unique():
         user_data[user_id] = df[df['user_id'] == user_id]
@@ -124,19 +144,6 @@ if __name__ == "__main__":
     # # Optionally, you can save the user profiles to a CSV file
     # user_profiles_df.to_csv('user_profiles.csv', index=False)
     print(df)
-
-
-
-
-
-
-
-
-
-
-
-
-
 
     # X = df.drop('label', axis=1)
     # y = df['label']
