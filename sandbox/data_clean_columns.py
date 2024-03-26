@@ -67,68 +67,54 @@ if __name__ == "__main__":
     df = load_df(df_path='data_after_dropped.csv',
                  to_drop=False)
 
-    start_count = df['log_type'].value_counts()
-
-    df['user_id'].value_counts()
-
-    # region Calculate time difference of related events
+    # region initialize data
     # Filter Start and Finish Events
     start_events = df[df['log_type'] == 'Starting auth']
     finish_events = df[df['log_type'] == 'Finishing auth']
 
-    # Merge Start and Finish Events based on 'auth_id'
-    merged_data = start_events.merge(finish_events, on='auth_id', suffixes=('_start', '_finish'))
+    # make copies of the start and finish events
+    start_events_copy = start_events.copy()
+    finish_events_copy = finish_events.copy()
 
-    # Calculate time difference
-    merged_data['@timestamp_start'] = pd.to_datetime(merged_data['@timestamp_start'], format=datetime_format)
-    merged_data['@timestamp_finish'] = pd.to_datetime(merged_data['@timestamp_finish'], format=datetime_format)
-    merged_data['time_difference'] = (merged_data['@timestamp_finish'] - merged_data['@timestamp_start']).dt.total_seconds()
+    # reset the index # TODO is it necessary?
+    start_events = start_events.reset_index(drop=True)
+    finish_events = finish_events.reset_index(drop=True)
+    start_events_copy = start_events_copy.reset_index(drop=True)
+    finish_events_copy = finish_events_copy.reset_index(drop=True)
+
+    start_events_copy['@timestamp'] = pd.to_datetime(start_events_copy['@timestamp'], format=datetime_format)
+    finish_events_copy['@timestamp'] = pd.to_datetime(finish_events_copy['@timestamp'], format=datetime_format)
     # endregion
 
-    # region Calculate average login time per user
+    # Calculate Average Hour of Login
+    start_events_copy['hour_of_day_start'] = start_events_copy['@timestamp'].dt.hour
+
+    # Merge Start and Finish Events based on 'auth_id'
+    merged_data = start_events_copy.merge(finish_events_copy, on='auth_id', suffixes=('_start', '_finish'))
+
+    # region Calculate time difference of related events
+    """ 
+        Calculate time difference between the start and finish timestamp of events by
+         subtracting the start timestamp from the finish timestamp.
+    """
+    merged_data['time_difference'] = ((merged_data['@timestamp_finish'] - merged_data['@timestamp_start']).
+                                      dt.total_seconds())
+    # endregion
+
+    # region Calculate average login duration time per user
+    """
+        Calculate the average login time per user by grouping the data by 'user_id_start'
+        and calculating the mean of the 'time_difference' column.
+    """
     avg_login_time_per_user = merged_data.groupby('user_id_start')['time_difference'].mean().reset_index()
     avg_login_time_per_user.columns = ['user_id', 'avg_login_time_seconds']
     # endregion
 
-    # region Calculate Average Hour of Login
-    # # Calculate Average Timestamp of Login
-    # avg_timestamp_of_login = merged_data.groupby('user_id_start')['@timestamp_start'].mean().reset_index()
-    # avg_timestamp_of_login.columns = ['user_id', 'avg_timestamp_of_login']
+    # region Calculate Average Hour of Login per User
+    avg_hour_of_login = start_events_copy.groupby('user_id')['hour_of_day_start'].mean().reset_index()
+    avg_hour_of_login.columns = ['user_id_start', 'avg_hour_of_login']
 
-    # get the average of the time of the format "%H:%M:%S"
-    # # Calculate Average Time of Login
-    # copy_merged_data = merged_data.copy()
-    # copy_merged_data['@timestamp_start'] = pd.to_datetime(copy_merged_data['@timestamp_start'], format='%H:%M:%S')
-    # avg_timestamp_of_login = merged_data.groupby('user_id_start')['@timestamp_start'].mean().reset_index()
-    # avg_time_of_login = pd.to_timedelta(
-    #     avg_timestamp_of_login['avg_timestamp_of_login'].apply(lambda x: x.strftime('%H:%M:%S')))
-    # avg_time_of_login = pd.DataFrame(
-    #     {'user_id': avg_timestamp_of_login['user_id'], 'avg_time_of_login': avg_time_of_login})
-
-    # Calculate Average Hour of Login
-    start_events['hour_of_day'] = merged_data['@timestamp_start'].dt.hour
-    avg_hour_of_login = start_events.groupby('user_id')['hour_of_day'].mean().reset_index()
-    avg_hour_of_login.columns = ['user_id', 'avg_hour_of_login']
-
-    # Calculate Average minute of Login
-    start_events['minute_of_day'] = merged_data['@timestamp_start'].dt.minute
-    avg_minute_of_login = start_events.groupby('user_id')['minute_of_day'].mean().reset_index()
-    avg_minute_of_login.columns = ['user_id', 'avg_minute_of_login']
-
-    # Calculate Average second of Login
-    start_events['second_of_day'] = merged_data['@timestamp_start'].dt.second
-    avg_second_of_login = start_events.groupby('user_id')['second_of_day'].mean().reset_index()
-    avg_second_of_login.columns = ['user_id', 'avg_second_of_login']
-
-    # add them together to get the average time of login
-    avg_time_of_login = avg_hour_of_login.merge(avg_minute_of_login, on='user_id', how='left')
-    avg_time_of_login = avg_time_of_login.merge(avg_second_of_login, on='user_id', how='left')
-    avg_time_of_login['avg_time_of_login'] = avg_time_of_login['avg_hour_of_login'].astype(str) + ':' + avg_time_of_login[
-        'avg_minute_of_login'].astype(str) + ':' + avg_time_of_login['avg_second_of_login'].astype(str)
-    avg_time_of_login = avg_time_of_login.drop(['avg_hour_of_login', 'avg_minute_of_login', 'avg_second_of_login'], axis=1)
-
-
-
+    merged_data = merged_data.merge(avg_hour_of_login, on='user_id_start', how='left')
     # endregion
 
     # Merge this information back into the main user_profiles DataFrame
