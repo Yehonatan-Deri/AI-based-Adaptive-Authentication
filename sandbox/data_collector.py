@@ -63,10 +63,12 @@ def load_df(df_path: str,
     return df
 
 
-if __name__ == "__main__":
-    df = load_df(df_path='data_after_dropped.csv',
-                 to_drop=False)
-
+def extracr_data_and_merge_auths(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Extract the data from the start and finish sections of the DataFrame and merge them
+    :param df: DataFrame
+    :return: Merged DataFrame
+    """
     # region initialize data
     # Filter Start and Finish Events
     start_events = df[df['log_type'] == 'Starting auth']
@@ -120,6 +122,18 @@ if __name__ == "__main__":
     merged_data = merged_data.merge(avg_hour_of_login, on='user_id_start', how='left')
     # endregion
 
+    return merged_data
+
+
+def create_user_profiles(merged_data: pd.DataFrame,
+                         save_csv: bool) -> pd.DataFrame:
+    """
+    Create user profiles from the merged data
+
+    :param merged_data:
+    :param save_csv:
+    :return:
+    """
     # Create a user profile dictionary for each user containing the following features:
     # - user_id
     # - most_common_device
@@ -189,8 +203,22 @@ if __name__ == "__main__":
     user_profiles_df = pd.DataFrame.from_dict(user_profiles, orient='index')
 
     # Optionally, you can save the user profiles to a CSV file
-    user_profiles_df.to_csv('user_profiles.csv', index=False)
-    print(user_profiles_df)
+    if save_csv is not None:
+        user_profiles_df.to_csv('user_profiles.csv', index=False)
+
+    return user_profiles_df
+
+
+if __name__ == "__main__":
+    """
+    main function for testing the functions
+    """
+    df = load_df(df_path='data_after_dropped.csv',
+                 to_drop=False)
+
+    merged_data = extracr_data_and_merge_auths(df)
+
+    user_profiles_df = create_user_profiles(merged_data=merged_data, save_csv=False)
 
     # # X = df.drop('label', axis=1)
     # # y = df['label']
