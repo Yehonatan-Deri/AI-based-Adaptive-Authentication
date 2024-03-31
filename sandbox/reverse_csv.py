@@ -15,7 +15,7 @@ import pandas as pd
 # print(f"The encoding of '{csv_file}' is: {encoding}")
 
 
-df = pd.read_csv('data.csv')
+df = pd.read_csv('../csv_dir/data.csv')
 # remove the first row
 row_df = df.iloc[1:]  # check if needed !!
 # reverse the order of the rows

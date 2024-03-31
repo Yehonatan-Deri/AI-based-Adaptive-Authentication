@@ -201,7 +201,7 @@ def create_user_profiles(merged_data: pd.DataFrame,
     user_profiles_df = pd.DataFrame.from_dict(user_profiles, orient='index')
 
     # Optionally, you can save the user profiles to a CSV file
-    if save_csv is not None:
+    if save_csv:
         user_profiles_df.to_csv('user_profiles.csv', index=False)
 
     return user_profiles_df
@@ -211,7 +211,7 @@ if __name__ == "__main__":
     """
     main function for testing the functions
     """
-    df = load_df(df_path='data_after_dropped.csv',
+    df = load_df(df_path='../csv_dir/data_after_dropped.csv',
                  to_drop=True,
                  save_csv=False)
 
