@@ -45,11 +45,13 @@ datetime_format = "%b %d, %Y @ %H:%M:%S.%f"
 
 
 def load_df(df_path: str,
-            to_drop: bool = False) -> pd.DataFrame:
+            to_drop: bool = False,
+            save_csv: bool = False) -> pd.DataFrame:
     """
     Load a DataFrame from a CSV file and drop the columns in the TO_DROP list
     :param df_path: path of the data frame
     :param to_drop: boolean to drop the columns
+    :param save_csv: boolean to save the data frame
     :return: DataFrame with the columns dropped
     """
     df = pd.read_csv(df_path)
@@ -59,11 +61,12 @@ def load_df(df_path: str,
 
         # Drop the columns and update the DataFrame
         df = df.drop(columns=columns_to_drop)
-        df.to_csv('data_after_dropped.csv', index=False, encoding='utf-8-sig')
+        if save_csv:
+            df.to_csv('data_after_dropped.csv', index=False, encoding='utf-8-sig')
     return df
 
 
-def extracr_data_and_merge_auths(df: pd.DataFrame) -> pd.DataFrame:
+def extract_data_and_merge_auths(df: pd.DataFrame) -> pd.DataFrame:
     """
     Extract the data from the start and finish sections of the DataFrame and merge them
     :param df: DataFrame
@@ -145,12 +148,7 @@ def create_user_profiles(merged_data: pd.DataFrame,
     # and store them in a dictionary with the user_id as the key. then convert the dictionary to a DataFrame.
     # Finally, save the user profiles to a CSV file.
 
-    # # Feature selection
-    features = ['avg_start_finish_login_time_seconds', 'user_agent.device.name_start', 'user_agent.os.full_start',
-                'user_id_start', 'avg_hour_of_login']
-    X = merged_data[features]
-
-    # # separate the data from merged_data for each user_id and store  them in a dictionary
+    # separate the data from merged_data for each user_id and store  them in a dictionary
     user_data = {}
     for user_id in merged_data['user_id_start'].unique():
         user_data[user_id] = merged_data[merged_data['user_id_start'] == user_id]
@@ -214,17 +212,9 @@ if __name__ == "__main__":
     main function for testing the functions
     """
     df = load_df(df_path='data_after_dropped.csv',
-                 to_drop=False)
+                 to_drop=True,
+                 save_csv=False)
 
-    merged_data = extracr_data_and_merge_auths(df)
+    merged_data = extract_data_and_merge_auths(df)
 
     user_profiles_df = create_user_profiles(merged_data=merged_data, save_csv=False)
-
-    # # X = df.drop('label', axis=1)
-    # # y = df['label']
-    # # X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-    # # model = xgb.XGBClassifier(use_label_encoder=False)
-    # # model.fit(X_train, y_train)
-    # # predictions = model.predict(X_test)
-    # # accuracy = accuracy_score(y_test, predictions)
-    # # print("Accuracy: %.2f%%" % (accuracy * 100.0))
