@@ -11,9 +11,10 @@ from sandbox import data_collector
 datetime_format = "%b %d, %Y @ %H:%M:%S.%f"
 
 # Load your user profiles data
-user_profiles_df = data_collector.get_user_profiles(df_path='csv_dir/data_after_dropped.csv')
+user_profiles_df = data_collector.get_user_profiles(df_path='csv_dir/data_year_status.csv')
 
-logs_data = data_collector.load_df(df_path='csv_dir/data_after_dropped.csv')
+# logs_data = data_collector.load_df(df_path='csv_dir/data_after_dropped.csv')
+logs_data = data_collector.load_df(df_path='csv_dir/test_year_status.csv')
 logs_data['@timestamp'] = pd.to_datetime(logs_data['@timestamp'], format=datetime_format)
 logs_data['event.created'] = pd.to_datetime(logs_data['event.created'], format=datetime_format)
 logs_data['@timestamp'] = pd.to_numeric(logs_data['@timestamp'])
