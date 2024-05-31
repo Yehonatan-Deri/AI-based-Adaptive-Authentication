@@ -1,3 +1,4 @@
+"""
 import pandas as pd
 from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import LabelEncoder
@@ -5,7 +6,8 @@ import joblib
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import IsolationForest
 from sklearn.metrics import accuracy_score
-
+import matplotlib.pyplot as plt
+import seaborn as sns
 from sandbox import data_collector
 
 datetime_format = "%b %d, %Y @ %H:%M:%S.%f"
@@ -82,6 +84,190 @@ X_train, X_test = train_test_split(logs_data_selected, test_size=0.3, random_sta
 
 
 # Train the Isolation Forest model
+model = IsolationForest(n_estimators=100, random_state=42)
+model.fit(X_train)
+
+# Predict anomaly scores for test data
+y_pred = model.decision_function(X_test)
+
+# Set a threshold for anomaly classification (adjust based on risk tolerance)
+threshold = 0.01  # You can adjust this value
+
+# Identify potential anomalies (logins with scores below the threshold)
+potential_anomalies = X_test.loc[(abs(y_pred) > threshold)]
+
+# invert the encoding for the user_agent.device.name, log_type, and user_id columns
+potential_anomalies['user_agent.device.name'] = device_name_encoder.inverse_transform(potential_anomalies['user_agent.device.name'])
+potential_anomalies['log_type'] = log_type_encoder.inverse_transform(potential_anomalies['log_type'])
+potential_anomalies['user_id'] = user_id_encoder.inverse_transform(potential_anomalies['user_id'])
+potential_anomalies['@timestamp'] = pd.to_datetime(potential_anomalies['@timestamp'], unit='ns')
+
+# Investigate potential anomalies (further analysis needed to confirm)
+print("Potential anomalies:")
+print(potential_anomalies)
+
+# accuracy
+accuracy = (X_test.shape[0] - potential_anomalies.shape[0]) / X_test.shape[0]
+print("Accuracy: ", accuracy)
+
+
+# Plotting functions
+def plot_scatter(df, feature1, feature2, anomalies):
+    plt.figure(figsize=(10, 6))
+    plt.scatter(df[feature1], df[feature2], c='blue', label='Normal Data', alpha=0.5)
+    plt.scatter(anomalies[feature1], anomalies[feature2], c='red', label='Anomalies', alpha=0.5)
+    plt.xlabel(feature1)
+    plt.ylabel(feature2)
+    plt.legend()
+    plt.title(f'Scatter Plot of {feature1} vs {feature2}')
+    plt.show()
+
+
+def plot_histogram(anomaly_scores, threshold):
+    plt.figure(figsize=(10, 6))
+    sns.histplot(anomaly_scores, bins=50, kde=True, color='blue')
+    plt.axvline(threshold, color='red', linestyle='--', label='Threshold')
+    plt.xlabel('Anomaly Score')
+    plt.ylabel('Frequency')
+    plt.title('Histogram of Anomaly Scores')
+    plt.legend()
+    plt.show()
+
+
+def plot_time_series(df, timestamp_col, anomalies):
+    plt.figure(figsize=(14, 7))
+    plt.plot(df[timestamp_col], df['anomaly_score'], label='Anomaly Score', color='blue')
+    plt.scatter(anomalies[timestamp_col], anomalies['anomaly_score'], color='red', label='Anomalies')
+    plt.xlabel('Timestamp')
+    plt.ylabel('Anomaly Score')
+    plt.title('Anomalies Over Time')
+    plt.legend()
+    plt.show()
+
+
+# Assuming X_test includes the column 'anomaly_score' with anomaly scores from the model
+X_test['anomaly_score'] = y_pred
+
+# Plot scatter plot for two selected features
+plot_scatter(X_test, 'Android sum', 'iOS sum', potential_anomalies)
+
+# Plot histogram of anomaly scores
+plot_histogram(X_test['anomaly_score'], threshold)
+
+# Plot time series of anomalies over time
+plot_time_series(X_test, '@timestamp', potential_anomalies)
+"""
+
+
+# """
+import pandas as pd
+import seaborn as sns
+from matplotlib import pyplot as plt
+from sklearn.ensemble import IsolationForest
+from sklearn.preprocessing import LabelEncoder
+import joblib
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import IsolationForest
+from sklearn.metrics import accuracy_score
+
+from sandbox import data_collector
+
+
+# region Remove warnings of: SettingWithCopyWarning in Pandas
+"""
+A value is trying to be set on a copy of a slice from a DataFrame.
+reference for solution: https://stackoverflow.com/questions/20625582/how-to-deal-with-settingwithcopywarning-in-pandas
+"""
+pd.options.mode.chained_assignment = None  # default='warn'
+# endregion
+
+datetime_format = "%b %d, %Y @ %H:%M:%S.%f"
+
+# Load your user profiles data
+user_profiles_df = data_collector.get_user_profiles(df_path='csv_dir/data_year_status.csv')
+
+# region Load logs data
+# logs_data = data_collector.load_df(df_path='csv_dir/data_after_dropped.csv')
+logs_data = data_collector.load_df(df_path='csv_dir/test_year_status.csv')
+logs_data['@timestamp'] = pd.to_datetime(logs_data['@timestamp'], format=datetime_format)
+logs_data['event.created'] = pd.to_datetime(logs_data['event.created'], format=datetime_format)
+logs_data['@timestamp'] = pd.to_numeric(logs_data['@timestamp'])
+logs_data['event.created'] = pd.to_numeric(logs_data['event.created'])
+
+selected_features = ['@timestamp', 'Android sum', 'iOS sum', 'log_type', 'user_agent.device.name',
+                     'user_id', 'auth_id']
+logs_data_selected = logs_data[selected_features]
+# endregion
+
+
+# region Handle missing values (replace with your chosen strategy)
+# logs_data_selected['user_agent.device.name'].fillna('unknown', inplace=True) # todo: remove ?
+logs_data_selected['user_agent.device.name'] = logs_data_selected['user_agent.device.name'].fillna('unknown')
+# logs_data_selected['user_id'].fillna('unknown', inplace=True) # todo: remove ?
+logs_data_selected['user_id'] = logs_data_selected['user_id'].fillna('unknown')
+# endregion
+
+
+# region Create anomalies
+# change 20% of the data to be anomalies by:
+# - adding hours to the timestamp or subtracting hours from the timestamp by 6-10 hours
+#   do this for same start and finish by auth_id
+# - change the phone type to be different from the most common device
+#   if it android change it to iOS and vice versa
+# and edit logs_data_selected
+
+# anomaly detection
+# 0: normal
+# 1: anomaly
+
+# 1. Add 6-10 hours to the timestamp for 20% of the data
+# Select 20% of the data to be modified start and finish of the same auth_id
+# find pairs start and finish by auth_id
+auth_ids = logs_data_selected['auth_id'].unique()
+pairs = []
+for auth_id in auth_ids:
+    auth_id_data = logs_data_selected[logs_data_selected['auth_id'] == auth_id]
+    if auth_id_data.shape[0] == 2:
+        pairs.append(auth_id_data)
+
+# select 20% of the pairs
+anomaly_pairs = pd.concat(pairs).sample(frac=0.2)
+logs_data_selected.loc[anomaly_pairs.index, '@timestamp'] = logs_data_selected.loc[anomaly_pairs.index, '@timestamp'] + 8 * 3600
+
+
+# 2. Change the phone type for 10% of the data
+# Select 20% of the data to be modified
+anomaly_data = logs_data_selected.sample(frac=0.1)
+# change the phone type to be different from the most common device
+for index, row in anomaly_data.iterrows():
+    if row['user_agent.device.name'] == 'Generic Smartphone':
+        logs_data_selected.at[index, 'user_agent.device.name'] = 'iPhone' # todo: remove ?
+        # logs_data_selected.loc[index, 'user_agent.device.name'] = 'iPhone'
+    else:
+        logs_data_selected.at[index, 'user_agent.device.name'] = 'XiaoMi Redmi Note 9S, Xiaomi, curtana, curtana_global' # todo: remove ?
+        # logs_data_selected.loc[
+        #     index, 'user_agent.device.name'] = 'XiaoMi Redmi Note 9S, Xiaomi, curtana, curtana_global'
+# endregion
+
+# logs_data_selected.drop(['auth_id'], axis=1, inplace=True) # todo: remove ?
+logs_data_selected = logs_data_selected.drop(['auth_id'], axis=1)
+
+# Convert categorical columns to numerical using LabelEncoder
+# Create separate encoders for each column
+log_type_encoder = LabelEncoder()
+device_name_encoder = LabelEncoder()
+user_id_encoder = LabelEncoder()
+
+logs_data_selected['log_type'] = log_type_encoder.fit_transform(logs_data_selected['log_type'])
+logs_data_selected['user_agent.device.name'] = device_name_encoder.fit_transform(logs_data_selected['user_agent.device.name'])
+logs_data_selected['user_id'] = user_id_encoder.fit_transform(logs_data_selected['user_id'])
+
+
+# Split data into training and testing sets (adjust test_size as needed)
+X_train, X_test = train_test_split(logs_data_selected, test_size=0.3, random_state=42)
+
+
+# Train the Isolation Forest model
 model = IsolationForest(n_estimators=100)
 model.fit(X_train)
 
@@ -100,6 +286,8 @@ potential_anomalies['user_agent.device.name'] = device_name_encoder.inverse_tran
 potential_anomalies['log_type'] = log_type_encoder.inverse_transform(potential_anomalies['log_type'])
 potential_anomalies['user_id'] = user_id_encoder.inverse_transform(potential_anomalies['user_id'])
 potential_anomalies['@timestamp'] = pd.to_datetime(potential_anomalies['@timestamp'], unit='ns')
+
+
 # Investigate potential anomalies (further analysis needed to confirm)
 print("Potential anomalies:")
 print(potential_anomalies)
@@ -107,6 +295,16 @@ print(potential_anomalies)
 # accuracy
 print("Accuracy: ", potential_anomalies.shape[0] / X_test.shape[0])
 
+# # Visualization
+plt.figure(figsize=(12, 8))
+sns.scatterplot(x='@timestamp', y='user_agent.device.name', data=logs_data_selected, label='Normal')
+sns.scatterplot(x='@timestamp', y='user_agent.device.name', data=potential_anomalies, color='red', label='Anomaly')
+plt.title('Anomalies in User Login Data')
+plt.xlabel('Timestamp')
+plt.ylabel('Device Name')
+plt.legend()
+plt.show()
+# """
 
 
 # # Select relevant features for the model
