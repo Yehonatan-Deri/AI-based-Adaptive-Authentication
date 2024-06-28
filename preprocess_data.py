@@ -12,12 +12,21 @@ class Preprocessor:
     def load_data(self):
         self.df = pd.read_csv(self.file_path)
         self.df['@timestamp'] = pd.to_datetime(self.df['@timestamp'].str.replace('@', '').str.strip(), format='%b %d, %Y %H:%M:%S.%f')
+        # Remove rows where the message contains "I <query>"
+        self.df = self.df[~self.df['message'].str.contains("I <query>", na=False)]
+        # Reset the index after removing rows
+        self.df = self.df.reset_index(drop=True)
         return self.df
 
     def parse_message(self):
         self.df['auth_id'] = self.df['message'].str.extract(r'auth\s+([A-Za-z0-9]+)')
         self.df['is_denied'] = self.df['message'].str.contains('denied', case=False, na=False)
         self.df['is_approved'] = self.df['message'].str.contains('approved', case=False, na=False)
+
+        # Extract log_type (start/finish) from the message
+        self.df['log_type'] = np.where(self.df['message'].str.contains('start', case=False, na=False), 'start',
+                                       np.where(self.df['message'].str.contains('finish', case=False, na=False),
+                                                'finish', np.nan))
 
     def fill_missing_values(self):
         # Fill missing user_id in finish actions by matching start actions based on auth_id
@@ -32,15 +41,20 @@ class Preprocessor:
         incomplete_auth_ids = incomplete_sessions['auth_id'].unique()
         self.df.loc[self.df['auth_id'].isin(incomplete_auth_ids), 'is_denied'] = True
 
+    def drop_unwanted_columns(self):
+        columns_to_keep = ['@timestamp', 'Android sum', 'auth_id', 'iOS sum', 'log_type', 'message', 'user_id']
+        self.df = self.df[columns_to_keep]
+
     def preprocess(self):
         self.load_data()
+        self.drop_unwanted_columns()
         self.parse_message()
         self.fill_missing_values()
         self.handle_incomplete_sessions()
         return self.df
 
 if __name__ == "__main__":
-    file_path = '/mnt/data/jerusalem_location_15.csv'
+    file_path = 'csv_dir/jerusalem_location_15.csv'
     preprocessor = Preprocessor(file_path)
     df = preprocessor.preprocess()
     print(df.head())
