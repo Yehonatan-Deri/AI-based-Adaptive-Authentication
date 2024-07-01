@@ -75,12 +75,28 @@ class Preprocessor:
 
         self.df['location_or_ip'] = self.df['message'].apply(extract_info)
 
+    def calculate_session_duration(self):
+        # Calculate session duration for each auth_id
+        start_times = self.df[self.df['log_type'] == 'start'][['auth_id', '@timestamp']].rename(columns={'@timestamp': 'start_time'})
+        finish_times = self.df[self.df['log_type'] == 'finish'][['auth_id', '@timestamp']].rename(columns={'@timestamp': 'finish_time'})
+
+        session_times = pd.merge(start_times, finish_times, on='auth_id')
+        session_times['session_duration'] = (session_times['finish_time'] - session_times['start_time']).dt.total_seconds()
+
+        # Merge session duration back into the original dataframe
+        self.df = pd.merge(self.df, session_times[['auth_id', 'session_duration']], on='auth_id', how='left')
+
+        # Keep session duration only for finish messages
+        self.df.loc[self.df['log_type'] != 'finish', 'session_duration'] = np.nan
+
     def preprocess(self):
         self.load_data()
         self.drop_unwanted_columns()
         self.parse_message()
+        self.extract_location_or_ip()
         self.fill_missing_values()
-        self.handle_incomplete_sessions()
+        self.mark_incomplete_sessions_as_denied()
+        self.calculate_session_duration()
         return self.df
 
 if __name__ == "__main__":
