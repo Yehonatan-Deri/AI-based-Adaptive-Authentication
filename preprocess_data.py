@@ -35,10 +35,20 @@ class Preprocessor:
         self.df['user_id'] = self.df['user_id'].fillna(self.df['user_id_start'])
         self.df.drop(columns=['user_id_start'], inplace=True)
 
-    def handle_incomplete_sessions(self):
+    def mark_incomplete_sessions_as_denied(self):
+        # Find start messages with no corresponding finish messages
+        auth_ids_with_finish = self.df[self.df['log_type'] == 'finish']['auth_id'].unique()
+        unfinished_starts = self.df[(self.df['log_type'] == 'start') & (~self.df['auth_id'].isin(auth_ids_with_finish))]
+
+        # Mark these start messages as denied
+        self.df.loc[unfinished_starts.index, 'is_denied'] = True
+
+        # Identify sessions without any 'denied' or 'approved' messages
         incomplete_sessions = self.df.groupby('auth_id').filter(
             lambda x: (x['is_denied'].sum() == 0) & (x['is_approved'].sum() == 0))
         incomplete_auth_ids = incomplete_sessions['auth_id'].unique()
+
+        # Mark these sessions as denied
         self.df.loc[self.df['auth_id'].isin(incomplete_auth_ids), 'is_denied'] = True
 
     def drop_unwanted_columns(self):
