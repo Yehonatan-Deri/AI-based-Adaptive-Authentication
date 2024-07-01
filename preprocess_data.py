@@ -1,4 +1,5 @@
 # preprocess_data.py
+import re
 
 import pandas as pd
 import numpy as np
@@ -54,6 +55,25 @@ class Preprocessor:
     def drop_unwanted_columns(self):
         columns_to_keep = ['@timestamp', 'Android sum', 'auth_id', 'iOS sum', 'log_type', 'message', 'user_id']
         self.df = self.df[columns_to_keep]
+
+    def extract_location_or_ip(self):
+        ip_pattern = re.compile(r'ip: (null|\d{1,3}(?:\.\d{1,3}){3})')
+        location_pattern = re.compile(r'at (.*? \(\d{1,3}(?:\.\d{1,3}){3}\))')
+
+        def extract_info(message):
+            # Check for location pattern
+            location_match = location_pattern.search(message)
+            if location_match:
+                return location_match.group(1)
+
+            # Check for IP pattern
+            ip_match = ip_pattern.search(message)
+            if ip_match:
+                return f"ip: {ip_match.group(1)}"
+
+            return None
+
+        self.df['location_or_ip'] = self.df['message'].apply(extract_info)
 
     def preprocess(self):
         self.load_data()
