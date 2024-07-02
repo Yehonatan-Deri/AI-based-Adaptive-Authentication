@@ -75,6 +75,30 @@ class Preprocessor:
 
         self.df['location_or_ip'] = self.df['message'].apply(extract_info)
 
+    def extract_phone_type_and_version(self):
+        def extract_info(message):
+            if "iOS" in message:
+                return "iOS"
+            elif "Android" in message:
+                return "Android"
+            return None
+
+        self.df['phone_type'] = self.df['message'].apply(extract_info)
+        self.df['Android sum'] = np.where((self.df['log_type'] == 'finish') & (self.df['phone_type'] == 'Android'), 1, 0)
+        self.df['iOS sum'] = np.where((self.df['log_type'] == 'finish') & (self.df['phone_type'] == 'iOS'), 1, 0)
+
+        def extract_versions(message):
+            if "Android" in message:
+                match = re.search(r'Android \d+; (.*?),', message)
+                if match:
+                    return match.group(1)
+            elif "iOS" in message:
+                match = re.search(r'iOS \d+\.\d+;\s([^,)]+)', message)
+                if match:
+                    return match.group(1)
+            return None
+
+        self.df['phone_versions'] = self.df['message'].apply(extract_versions)
     def calculate_session_duration(self):
         # Calculate session duration for each auth_id
         start_times = self.df[self.df['log_type'] == 'start'][['auth_id', '@timestamp']].rename(columns={'@timestamp': 'start_time'})
@@ -94,6 +118,7 @@ class Preprocessor:
         self.drop_unwanted_columns()
         self.parse_message()
         self.extract_location_or_ip()
+        self.extract_phone_type_and_version()
         self.fill_missing_values()
         self.mark_incomplete_sessions_as_denied()
         self.calculate_session_duration()
