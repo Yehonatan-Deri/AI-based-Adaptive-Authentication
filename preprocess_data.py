@@ -99,6 +99,9 @@ class Preprocessor:
             return None
 
         self.df['phone_versions'] = self.df['message'].apply(extract_versions)
+
+    def extract_hour_of_timestamp(self):
+        self.df['hour_of_timestamp'] = self.df['@timestamp'].dt.hour
     def calculate_session_duration(self):
         # Calculate session duration for each auth_id
         start_times = self.df[self.df['log_type'] == 'start'][['auth_id', '@timestamp']].rename(columns={'@timestamp': 'start_time'})
@@ -119,6 +122,7 @@ class Preprocessor:
         self.parse_message()
         self.extract_location_or_ip()
         self.extract_phone_type_and_version()
+        self.extract_hour_of_timestamp()
         self.fill_missing_values()
         self.mark_incomplete_sessions_as_denied()
         self.calculate_session_duration()
