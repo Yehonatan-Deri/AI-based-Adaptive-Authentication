@@ -9,15 +9,16 @@ from user_profiling import UserProfiler
 
 
 class LOFModel:
-    def __init__(self, preprocessed_df):
+    def __init__(self, preprocessed_df, min_samples=5):
         self.profiler = UserProfiler(preprocessed_df)
         self.user_models = {}
         self.user_scalers = {}
+        self.min_samples = min_samples  # Minimum samples required for training
 
     def train_user_model(self, user_id):
         user_data = self.profiler.df[self.profiler.df['user_id'] == user_id]
 
-        if user_data.empty or len(user_data) < 5:  # Ensure enough data points
+        if user_data.empty or len(user_data) < self.min_samples:  # Ensure enough data points
             return None, None
 
         # Get user profile
@@ -40,21 +41,31 @@ class LOFModel:
         # Convert categorical 'phone_versions' to numerical using factorize
         action_features['phone_versions'] = pd.factorize(action_features['phone_versions'])[0]
 
-        # Repeat profile features to match the number of action rows
-        profile_features_repeated = np.tile(profile_features, (len(action_features), 1))
-
         # Combine action features with profile features
-        combined_features = np.hstack((action_features, profile_features_repeated))
+        combined_features = np.hstack((action_features, np.tile(profile_features, (len(action_features), 1))))
 
-        # Replace NaNs in numerical columns with 0
-        combined_features = pd.DataFrame(combined_features).fillna(0).values
+        # Convert combined features to DataFrame and handle NaNs
+        combined_df = pd.DataFrame(combined_features, columns=[
+            'hour_of_timestamp', 'phone_versions', 'iOS sum', 'Android sum', 'is_denied', 'session_duration',
+            'average_login_hour', 'login_hour_std_dev', 'device_changes',
+            'total_ios_actions', 'total_android_actions', 'denial_rate',
+            'average_session_duration', 'session_duration_std_dev'
+        ])
+        combined_df.fillna(0, inplace=True)
+        combined_df = combined_df.infer_objects(copy=False)
+        combined_features = combined_df.values
+
+        # Debugging print statements
+        print(f"Training user: {user_id}")
+        print(f"Combined features shape (training): {combined_features.shape}")
+        print(f"Feature names (training): {combined_df.columns.tolist()}")
 
         # Scale features
         scaler = StandardScaler()
         scaled_features = scaler.fit_transform(combined_features)
 
         # Train LOF model
-        lof = LocalOutlierFactor(n_neighbors=5, contamination=0.1)
+        lof = LocalOutlierFactor(n_neighbors=min(5, len(user_data) - 1), contamination=0.1)
         lof.fit(scaled_features)
 
         # Save the model and scaler for the user
@@ -66,7 +77,7 @@ class LOFModel:
         for user_id in user_ids:
             self.train_user_model(user_id)
 
-    def predict_user_action(self, user_id, action_features):
+    def predict_user_action(self, user_id, action_features, threshold_inbetween=-1.5, threshold_invalid=-3.0):
         if user_id not in self.user_models:
             raise ValueError(f"No model found for user_id: {user_id}")
 
@@ -84,19 +95,55 @@ class LOFModel:
         ]
 
         # Combine action features with profile features
-        combined_features = action_features + profile_features
+        combined_features = np.hstack(
+            (np.array(action_features).reshape(1, -1), np.array(profile_features).reshape(1, -1)))
 
-        # Scale action features
+        # Convert combined features to DataFrame and handle NaNs
+        combined_df = pd.DataFrame(combined_features, columns=[
+            'hour_of_timestamp', 'phone_versions', 'iOS sum', 'Android sum', 'is_denied', 'session_duration',
+            'average_login_hour', 'login_hour_std_dev', 'device_changes',
+            'total_ios_actions', 'total_android_actions', 'denial_rate',
+            'average_session_duration', 'session_duration_std_dev'
+        ])
+        combined_df.fillna(0, inplace=True)
+        combined_df = combined_df.infer_objects(copy=False)
+        combined_features = combined_df.values
+
+        # Debugging print statements
+        print(f"Predicting for user: {user_id}")
+        print(f"Combined features shape (prediction): {combined_features.shape}")
+        print(f"Feature names (prediction): {combined_df.columns.tolist()}")
+
+        # Get existing user data
+        user_data = self.profiler.df[self.profiler.df['user_id'] == user_id]
+        existing_features = user_data[
+            ['hour_of_timestamp', 'phone_versions', 'iOS sum', 'Android sum', 'is_denied', 'session_duration']].copy()
+        existing_features['phone_versions'] = pd.factorize(existing_features['phone_versions'])[0]
+        existing_features = existing_features.apply(pd.to_numeric, errors='coerce').fillna(0)
+
+        # Combine existing features with the new login features
+        combined_existing_features = np.hstack(
+            (existing_features, np.tile(profile_features, (len(existing_features), 1))))
+        combined_existing_features = np.vstack((combined_existing_features, combined_features))
+
+        # Scale the combined features
         scaler = self.user_scalers[user_id]
-        scaled_features = scaler.transform([combined_features])
+        combined_existing_features_scaled = scaler.fit_transform(combined_existing_features)
 
-        # Predict using LOF model
-        lof = self.user_models[user_id]
-        prediction = lof.predict(scaled_features)
+        # Fit the model on the combined data
+        lof = LocalOutlierFactor(n_neighbors=min(5, len(combined_existing_features_scaled) - 1), contamination=0.1)
+        lof.fit(combined_existing_features_scaled)
 
-        # Return 'normal' for 1 and 'anomaly' for -1
-        return 'normal' if prediction[0] == 1 else 'anomaly'
+        # Get the LOF score for the new login
+        lof_score = lof.negative_outlier_factor_[-1]
 
+        # Determine the category based on thresholds
+        if lof_score > threshold_inbetween:
+            return "valid"
+        elif threshold_invalid < lof_score <= threshold_inbetween:
+            return "need_second_check"
+        else:
+            return "invalid"
 
 if __name__ == "__main__":
     preprocessed_file_path = 'csv_dir/jerusalem_location_15.csv'
@@ -104,19 +151,18 @@ if __name__ == "__main__":
 
     # Initialize and train LOF models
     lof_model = LOFModel(preprocessed_df)
-    lof_model.train_all_users()
+    lof_model.train_user_model('aca17b2f-0840-4e47-a24a-66d47f9f16d7')
+    # lof_model.train_all_users()
 
     # Example: Predicting a new action for a user
     example_user_id = 'aca17b2f-0840-4e47-a24a-66d47f9f16d7'
     example_action_features = [
-        15,  # average_login_hour
-        2,  # login_hour_std_dev
-        3,  # device_changes
-        5,  # total_ios_actions
-        10,  # total_android_actions
-        0.1,  # denial_rate
-        300,  # average_session_duration
-        50  # session_duration_std_dev
+        15,  # hour_of_timestamp
+        1,  # phone_versions (factorized value)
+        1,  # iOS sum
+        0,  # Android sum
+        0,  # is_denied
+        300  # session_duration
     ]
     prediction = lof_model.predict_user_action(example_user_id, example_action_features)
     print(f"Prediction for new action: {prediction}")
