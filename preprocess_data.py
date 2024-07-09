@@ -1,4 +1,5 @@
 # preprocess_data.py
+# Description: This module is responsible for preprocessing the raw log data.
 import re
 
 import pandas as pd
@@ -106,7 +107,7 @@ class Preprocessor:
                 if match:
                     return match.group(1)
             elif "iOS" in message:
-                match = re.search(r'iOS \d+\.\d+;\s([^,)]+)', message)
+                match = re.search(r'iOS \d+(?:\.\d+)*;\s([^,)]+)', message)
                 if match:
                     return match.group(1)
             return None
@@ -129,7 +130,7 @@ class Preprocessor:
 
         session_times = pd.merge(start_times, finish_times, on='auth_id')
         session_times['session_duration'] = (
-                    session_times['finish_time'] - session_times['start_time']).dt.total_seconds()
+                session_times['finish_time'] - session_times['start_time']).dt.total_seconds()
 
         # Merge session duration back into the original dataframe
         self.df = pd.merge(self.df, session_times[['auth_id', 'session_duration']], on='auth_id', how='left')
@@ -172,7 +173,6 @@ class Preprocessor:
         self.df = combined_df[final_columns].copy()
         self.df.rename(columns={'user_id_start': 'user_id'}, inplace=True)
 
-
     def preprocess(self):
         self.load_data()
         self.drop_unwanted_columns()
@@ -189,6 +189,9 @@ class Preprocessor:
 
 
 if __name__ == "__main__":
+    """
+    main is for test purposes only
+    """
     file_path = 'csv_dir/jerusalem_location_15.csv'
     # file_path = r"C:\Users\John's PC\Desktop\logs_csv.csv"
     preprocessor = Preprocessor(file_path)
