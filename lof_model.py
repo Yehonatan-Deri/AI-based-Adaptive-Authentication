@@ -1,36 +1,64 @@
 import pandas as pd
-import preprocess_data
 import numpy as np
 from sklearn.neighbors import LocalOutlierFactor
 from sklearn.preprocessing import StandardScaler
-
-from graph_generator import GraphGenerator
+from sklearn.model_selection import train_test_split
 from user_profiling import UserProfiler
 import matplotlib.pyplot as plt
 import seaborn as sns
+import concurrent.futures
+import threading
+from tqdm import tqdm
+import random
+
 
 class LOFModel:
-    def __init__(self, preprocessed_df, min_samples=5):
+    """
+    Local Outlier Factor (LOF) model for detecting anomalies in user behavior.
+
+    This class implements a multi-threaded LOF model that trains on individual features
+    for each user and provides methods for prediction and evaluation.
+    """
+
+    def __init__(self, preprocessed_df, min_samples=5, max_workers=None):
+        """
+        Initialize the LOF model.
+
+        Args:
+            preprocessed_df (pd.DataFrame): Preprocessed dataframe containing user data.
+            min_samples (int): Minimum number of samples required to train a user model.
+            max_workers (int): Maximum number of threads to use for parallel processing.
+
+        Attributes:
+            profiler (UserProfiler): User profiling object.
+            user_models (dict): Stores LOF models for each user and feature.
+            user_scalers (dict): Stores scalers for each user and feature.
+            user_test_data (dict): Stores test data for each user.
+            categorical_columns (dict): Stores categorical column names for each user.
+            features (list): List of features used in the model.
+            feature_weights (dict): Weights assigned to each feature for anomaly scoring.
+            feature_thresholds (dict): Thresholds for each feature to determine anomalies.
+        """
         self.profiler = UserProfiler(preprocessed_df)
         self.user_models = {}
         self.user_scalers = {}
-        self.min_samples = min_samples  # Minimum samples required for training
+        self.user_test_data = {}
+        self.categorical_columns = {}
+        self.min_samples = min_samples
+        self.max_workers = max_workers
+        self.lock = threading.Lock()
+        self.features = ['hour_of_timestamp', 'phone_versions', 'iOS sum', 'Android sum', 'is_denied',
+                         'session_duration', 'location_or_ip']
         self.feature_weights = {
             'hour_of_timestamp': 0.2,
-            'phone_versions': 0.3,
-            'iOS sum': 0.2,
-            'Android sum': 0.2,
-            'is_denied': 0.3,
-            'session_duration': 0.2
+            'phone_versions': 0.2,
+            'iOS sum': 0.1,
+            'Android sum': 0.1,
+            'is_denied': 0.2,
+            'session_duration': 0.1,
+            'location_or_ip': 0.3
         }
-        self.feature_thresholds = {
-            'hour_of_timestamp': -1.5,
-            'phone_versions': -1.5,
-            'iOS sum': -1.5,
-            'Android sum': -1.5,
-            'is_denied': -1.5,
-            'session_duration': -1.5
-        }
+        self.feature_thresholds = {feature: -1.5 for feature in self.features}
 
     def train_user_model(self, user_id):
         user_data = self.profiler.df[self.profiler.df['user_id'] == user_id]
