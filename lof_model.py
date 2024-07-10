@@ -187,15 +187,18 @@ class LOFModel:
         return 1.0
 
     def aggregate_scores(self, lof_scores, threshold_inbetween, threshold_invalid):
-        total_weighted_score = 0
+        """
+        Aggregate LOF scores for all features and classify the action.
 
-        for feature, score in lof_scores:
-            threshold = self.feature_thresholds[feature]
-            weight = self.feature_weights[feature]
+        Args:
+            lof_scores (list): List of tuples containing (feature, score) pairs.
+            threshold_inbetween (float): Threshold for 'need_second_check' classification.
+            threshold_invalid (float): Threshold for 'invalid' classification.
 
-            total_weighted_score += score * weight
-
-        print(f"Total Weighted Score: {total_weighted_score}")
+        Returns:
+            str: 'valid', 'need_second_check', or 'invalid'
+        """
+        total_weighted_score = sum(score for _, score in lof_scores)
 
         if total_weighted_score <= threshold_invalid:
             return "invalid"
