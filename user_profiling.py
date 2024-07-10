@@ -1,3 +1,6 @@
+# user_profiling.py
+# Description: This module is responsible for profiling users based on their behavior.
+
 import pandas as pd
 import preprocess_data
 import numpy as np
@@ -14,9 +17,6 @@ class UserProfiler:
         if user_data.empty:
             raise ValueError(f"No data available for user_id: {user_id}")
 
-        # Filter only 'finish' log_type rows for locations and device list
-        finish_data = user_data[user_data['log_type'] == 'finish']
-
         profile = {
             'user_id': user_id,
             'average_login_hour': user_data['hour_of_timestamp'].mean(),
@@ -27,8 +27,8 @@ class UserProfiler:
             'denial_rate': user_data['is_denied'].mean(),
             'average_session_duration': user_data['session_duration'].mean(),
             'session_duration_std_dev': user_data['session_duration'].std(),
-            'locations': finish_data['location_or_ip'].unique().tolist(),
-            'device_list': finish_data['phone_versions'].unique().tolist(),
+            'locations': user_data['location_or_ip'].unique().tolist(),
+            'device_list': user_data['phone_versions'].unique().tolist(),
         }
 
         return profile
@@ -42,7 +42,6 @@ class UserProfiler:
             except ValueError:
                 continue
         return pd.DataFrame(profiles)
-
 
     def analyze_login_times(self, user_id):
         user_data = self.df[self.df['user_id'] == user_id]
@@ -71,8 +70,7 @@ class UserProfiler:
 
     def handle_device_changes(self, user_id):
         user_data = self.df[self.df['user_id'] == user_id]
-        finish_data = user_data[user_data['log_type'] == 'finish']
-        device_list = finish_data['phone_versions'].unique().tolist()
+        device_list = user_data['phone_versions'].unique().tolist()
         device_changes = len(device_list)
 
         # Assuming frequent changes within a short period are suspicious
@@ -93,7 +91,6 @@ class UserProfiler:
 
     def calculate_denial_rate(self, user_id):
         user_data = self.df[self.df['user_id'] == user_id]
-        total_attempts = len(user_data)
         denial_rate = user_data['is_denied'].mean()
 
         # Calculate trends over time (e.g., monthly)
@@ -108,8 +105,7 @@ class UserProfiler:
 
     def track_location_changes(self, user_id):
         user_data = self.df[self.df['user_id'] == user_id]
-        finish_data = user_data[user_data['log_type'] == 'finish']
-        location_list = finish_data['location_or_ip'].unique().tolist()
+        location_list = user_data['location_or_ip'].unique().tolist()
         return location_list
 
     def validate_data(self):
@@ -118,10 +114,15 @@ class UserProfiler:
 
 
 if __name__ == "__main__":
+    """
+    main is for test purposes only
+    """
     preprocessed_file_path = 'csv_dir/jerusalem_location_15.csv'
     # preprocessed_df = pd.read_csv(preprocessed_file_path)
     preprocessed_df = preprocess_data.Preprocessor(preprocessed_file_path).preprocess()
     profiler = UserProfiler(preprocessed_df)
+
+    # region Debug test cases
     example_user_id = 'aca17b2f-0840-4e47-a24a-66d47f9f16d7'
     profile = profiler.create_user_profile(example_user_id)
     print(profile)
@@ -136,3 +137,4 @@ if __name__ == "__main__":
     print(f"Denial Rate: {denial_rate}, Monthly Denial Rate: {monthly_denial_rate}")
     location_list = profiler.track_location_changes(example_user_id)
     print(f"Location List: {location_list}")
+    # endregion
