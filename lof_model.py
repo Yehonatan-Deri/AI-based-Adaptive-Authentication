@@ -295,6 +295,45 @@ class LOFModel:
                     print(f"  Anomalous Action {i + 1}:")
                     for key, value in action.items():
                         print(f"    {key}: {value}")
+
+    def visualize_anomalies(self, user_id):
+        """
+        Visualize the distribution of features and a 2D projection of user data.
+
+        This method creates histograms for each numerical feature and a 2D scatter plot
+        of the first two principal components of the user's data.
+
+        Args:
+            user_id (str): The ID of the user to visualize data for.
+        """
+        if user_id not in self.user_models:
+            print(f"No model found for user {user_id}")
+            return
+
+        user_data = self.profiler.df[self.profiler.df['user_id'] == user_id]
+
+        for feature in self.features:
+            if feature in ['phone_versions', 'location_or_ip']:
+                continue  # Skip visualization for categorical features
+
+            plt.figure(figsize=(10, 6))
+            sns.histplot(user_data[feature], kde=True)
+            plt.title(f"Distribution of {feature} for User {user_id}")
+            plt.xlabel(feature)
+            plt.ylabel("Frequency")
+            plt.show()
+
+        # Visualize 2D projection of multi-dimensional data
+        features_to_plot = [f for f in self.features if f not in ['phone_versions', 'location_or_ip']]
+        X = user_data[features_to_plot]
+        X_scaled = StandardScaler().fit_transform(X)
+
+        plt.figure(figsize=(12, 8))
+        plt.scatter(X_scaled[:, 0], X_scaled[:, 1], c='blue', alpha=0.5)
+        plt.title(f"2D Projection of User {user_id} Data")
+        plt.xlabel("First Principal Component")
+        plt.ylabel("Second Principal Component")
+        plt.show()
 if __name__ == "__main__":
     preprocessed_file_path = 'csv_dir/jerusalem_location_15.csv'
     preprocessed_df = preprocess_data.Preprocessor(preprocessed_file_path).preprocess()
