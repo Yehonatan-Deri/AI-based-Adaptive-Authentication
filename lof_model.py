@@ -110,9 +110,14 @@ class LOFModel:
             self.user_test_data[user_id] = test_data
 
     def train_all_users(self):
-        user_ids = self.profiler.df['user_id'].unique()
-        for user_id in user_ids:
-            self.train_user_model(user_id)
+        """
+        Train LOF models for all users in parallel.
+
+        This method uses a ThreadPoolExecutor to train models for multiple users concurrently.
+        """
+        user_ids = list(self.profiler.df['user_id'].unique())
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            list(tqdm(executor.map(self.train_user_model, user_ids), total=len(user_ids), desc="Training users"))
 
     def predict_user_action(self, user_id, action_features, threshold_inbetween=-2.5, threshold_invalid=-3.0):
         if user_id not in self.user_models:
