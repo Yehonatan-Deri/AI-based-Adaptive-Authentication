@@ -207,6 +207,56 @@ class LOFModel:
         else:
             return "valid"
 
+    def evaluate_model(self):
+        """
+        Evaluate the model on test data for all users.
+
+        This method calculates the number of valid, need_second_check, and invalid predictions
+        across all users' test data. It also displays random anomalies for further inspection.
+        """
+        results = {"valid": 0, "need_second_check": 0, "invalid": 0}
+        user_results = {}
+        user_ids = list(self.user_test_data.keys())
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            future_to_user = {executor.submit(self.evaluate_user, user_id): user_id for user_id in user_ids}
+            for future in tqdm(concurrent.futures.as_completed(future_to_user), total=len(user_ids),
+                               desc="Evaluating users"):
+                user_id = future_to_user[future]
+                user_result = future.result()
+                user_results[user_id] = user_result
+                with self.lock:
+                    for key in results:
+                        results[key] += user_result[key]
+
+        total = sum(results.values())
+        print("Evaluation Results:")
+        for category, count in results.items():
+            percentage = (count / total) * 100 if total > 0 else 0
+            print(f"{category.capitalize()}: {count} ({percentage:.2f}%)")
+
+        self.display_random_anomalies(user_results)
+
+    def evaluate_user(self, user_id):
+        """
+        Evaluate the model on a single user's test data.
+
+        Args:
+            user_id (str): The ID of the user to evaluate.
+
+        Returns:
+            dict: A dictionary containing counts of valid, need_second_check, and invalid predictions.
+        """
+        user_results = {"valid": 0, "need_second_check": 0, "invalid": 0}
+        test_data = self.user_test_data[user_id]
+        for _, row in test_data.iterrows():
+            action_features = {feature: row[feature] for feature in self.features}
+            try:
+                prediction = self.predict_user_action(user_id, action_features)
+                user_results[prediction] += 1
+            except Exception as e:
+                print(f"Error in prediction for user {user_id}: {e}")
+        return user_results
 
 if __name__ == "__main__":
     preprocessed_file_path = 'csv_dir/jerusalem_location_15.csv'
