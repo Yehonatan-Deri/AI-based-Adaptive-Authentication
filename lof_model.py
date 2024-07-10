@@ -334,66 +334,30 @@ class LOFModel:
         plt.xlabel("First Principal Component")
         plt.ylabel("Second Principal Component")
         plt.show()
+
+
 if __name__ == "__main__":
+    import preprocess_data
+
     preprocessed_file_path = 'csv_dir/jerusalem_location_15.csv'
     preprocessed_df = preprocess_data.Preprocessor(preprocessed_file_path).preprocess()
 
-    # Initialize and train LOF models
-    lof_model = LOFModel(preprocessed_df)
-    # lof_model.train_all_users()
-    lof_model.train_user_model('aca17b2f-0840-4e47-a24a-66d47f9f16d7')
+    lof_model = LOFModel(preprocessed_df, max_workers=10)  # Adjust max_workers as needed
+    lof_model.train_all_users()
 
-    # Initialize the GraphGenerator
-    graph_generator = GraphGenerator(lof_model.profiler)
-
-    # Example: Predicting a new action for a user
+    # Example usage
     example_user_id = 'aca17b2f-0840-4e47-a24a-66d47f9f16d7'
     example_action_features = {
         'hour_of_timestamp': 15,
-        'phone_versions': 1,  # factorized value
+        'phone_versions': 'iPhone14_5',
         'iOS sum': 1,
         'Android sum': 0,
         'is_denied': 0,
-        'session_duration': 300
+        'session_duration': 300,
+        'location_or_ip': 'Jerusalem, Israel (212.117.143.250)'
     }
     prediction = lof_model.predict_user_action(example_user_id, example_action_features)
     print(f"Prediction for new action: {prediction}")
 
-    # Valid Action Example
-    valid_action_features = {
-        'hour_of_timestamp': 13,  # close to average
-        'phone_versions': 0,  # iPhone14_5 factorized as 0
-        'iOS sum': 1,
-        'Android sum': 0,
-        'is_denied': 0,
-        'session_duration': 7  # close to average
-    }
-    prediction_valid = lof_model.predict_user_action(example_user_id, valid_action_features)
-    print(f"Valid action prediction: {prediction_valid}")
-
-    # Need Second Check Example
-    second_check_action_features = {
-        'hour_of_timestamp': 15,  # slightly outside average
-        'phone_versions': 1,  # new device, factorized as 1
-        'iOS sum': 1,
-        'Android sum': 0,
-        'is_denied': 0,
-        'session_duration': 10  # slightly outside average
-    }
-    prediction_second_check = lof_model.predict_user_action(example_user_id, second_check_action_features)
-    print(f"Second check action prediction: {prediction_second_check}")
-
-    # Invalid Action Example
-    invalid_action_features = {
-        'hour_of_timestamp': 22,  # significantly outside average
-        'phone_versions': 2,  # new device, factorized as 2
-        'iOS sum': 1,
-        'Android sum': 0,
-        'is_denied': 0,
-        'session_duration': 20  # significantly outside average
-    }
-    prediction_invalid = lof_model.predict_user_action(example_user_id, invalid_action_features)
-    print(f"Invalid action prediction: {prediction_invalid}")
-
-    # Generate all plots for the example user
-    graph_generator.generate_all_plots(example_user_id, lof_model, prediction)
+    lof_model.evaluate_model()
+    lof_model.visualize_anomalies(example_user_id)
