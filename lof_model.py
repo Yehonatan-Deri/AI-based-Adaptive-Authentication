@@ -120,46 +120,49 @@ class LOFModel:
             list(tqdm(executor.map(self.train_user_model, user_ids), total=len(user_ids), desc="Training users"))
 
     def predict_user_action(self, user_id, action_features, threshold_inbetween=-2.5, threshold_invalid=-3.0):
+        """
+        Predict whether a user action is anomalous.
+
+        This method calculates LOF scores for each feature of the action and aggregates them
+        to determine if the action is valid, needs a second check, or is invalid.
+
+        Args:
+            user_id (str): The ID of the user.
+            action_features (dict): A dictionary of feature names and their values for the action.
+            threshold_inbetween (float): The threshold for classifying an action as needing a second check.
+            threshold_invalid (float): The threshold for classifying an action as invalid.
+
+        Returns:
+            str: 'valid', 'need_second_check', or 'invalid'
+        """
         if user_id not in self.user_models:
             raise ValueError(f"No model found for user_id: {user_id}")
 
         lof_scores = []
-        for feature, value in action_features.items():
-            if feature not in self.user_models[user_id]:
+        for feature in self.features:
+            if feature not in action_features:
                 continue
 
+            value = action_features[feature]
             lof = self.user_models[user_id][feature]
             scaler = self.user_scalers[user_id][feature]
 
-            # Get existing user data
-            user_data = self.profiler.df[self.profiler.df['user_id'] == user_id]
-            existing_features = user_data[[feature]].copy()
-            existing_features = existing_features.apply(pd.to_numeric, errors='coerce').fillna(0)
-
-            # Combine existing features with the new login feature
-            combined_features = pd.concat([existing_features, pd.DataFrame([[value]], columns=[feature])])
-
-            # Scale the combined features
-            combined_features_scaled = scaler.transform(combined_features)
-
-            # Get the LOF score for the new login
-            lof.fit(combined_features_scaled)
-            lof_score = lof.negative_outlier_factor_[-1]
-
-            # Cap the LOF score at -10 if it's lower than -10
-            lof_score = max(lof_score, -6)
-
-            # Debugging print statements
-            print(f"Feature: {feature}, Value: {value}, LOF Score: {lof_score}")
-
-            # Apply profile weight adjustment (if applicable)
-            if feature in self.profiler.create_user_profile(user_id):
-                profile_value = self.profiler.create_user_profile(user_id)[feature]
-                profile_weight = self.calculate_profile_weight(profile_value, value)
-                weighted_score = lof_score * profile_weight
+            if feature in ['phone_versions', 'location_or_ip']:
+                feature_data = pd.get_dummies(pd.Series([value]), prefix=feature)
+                # Ensure all columns from training are present
+                for col in self.categorical_columns[user_id][feature]:
+                    if col not in feature_data.columns:
+                        feature_data[col] = 0
+                feature_data = feature_data.reindex(columns=self.categorical_columns[user_id][feature], fill_value=0)
             else:
-                weighted_score = lof_score
+                feature_data = pd.DataFrame([[value]], columns=[feature])
 
+            scaled_feature = scaler.transform(feature_data)
+            lof_score = lof.score_samples(scaled_feature)[0]
+            lof_score = max(lof_score, -6)  # Cap the LOF score
+
+            profile_weight = self.calculate_profile_weight(user_id, feature, value)
+            weighted_score = lof_score * profile_weight * self.feature_weights[feature]
             lof_scores.append((feature, weighted_score))
 
         return self.aggregate_scores(lof_scores, threshold_inbetween, threshold_invalid)
