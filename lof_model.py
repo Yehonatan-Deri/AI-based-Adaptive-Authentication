@@ -258,6 +258,43 @@ class LOFModel:
                 print(f"Error in prediction for user {user_id}: {e}")
         return user_results
 
+    def display_random_anomalies(self, user_results):
+        """
+        Display random anomalies from the 'need_second_check' and 'invalid' categories.
+
+        This method selects up to 3 random users from each category and displays their
+        profiles along with up to 3 random anomalous actions.
+
+        Args:
+            user_results (dict): Dictionary containing evaluation results for each user.
+        """
+        need_second_check_users = [user for user, results in user_results.items() if results['need_second_check'] > 0]
+        invalid_users = [user for user, results in user_results.items() if results['invalid'] > 0]
+
+        for category in ['need_second_check', 'invalid']:
+            users = need_second_check_users if category == 'need_second_check' else invalid_users
+            print(f"\nDisplaying 3 random users from {category} category:")
+
+            for user in random.sample(users, min(3, len(users))):
+                print(f"\nUser ID: {user}")
+                profile = self.profiler.create_user_profile(user)
+                print("User Profile:")
+                for key, value in profile.items():
+                    print(f"  {key}: {value}")
+
+                print("\nAnomalous Actions:")
+                test_data = self.user_test_data[user]
+                anomalous_actions = []
+                for _, row in test_data.iterrows():
+                    action_features = {feature: row[feature] for feature in self.features}
+                    prediction = self.predict_user_action(user, action_features)
+                    if prediction == category:
+                        anomalous_actions.append(action_features)
+
+                for i, action in enumerate(random.sample(anomalous_actions, min(3, len(anomalous_actions)))):
+                    print(f"  Anomalous Action {i + 1}:")
+                    for key, value in action.items():
+                        print(f"    {key}: {value}")
 if __name__ == "__main__":
     preprocessed_file_path = 'csv_dir/jerusalem_location_15.csv'
     preprocessed_df = preprocess_data.Preprocessor(preprocessed_file_path).preprocess()
