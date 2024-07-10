@@ -61,31 +61,53 @@ class LOFModel:
         self.feature_thresholds = {feature: -1.5 for feature in self.features}
 
     def train_user_model(self, user_id):
+        """
+        Train LOF models for a single user.
+
+        This method trains separate LOF models for each feature of a user's data.
+
+        Args:
+            user_id (str): The ID of the user to train models for.
+
+        Note:
+            This method skips users with insufficient data (less than min_samples).
+        """
         user_data = self.profiler.df[self.profiler.df['user_id'] == user_id]
 
-        if user_data.empty or len(user_data) < self.min_samples:  # Ensure enough data points
-            return None, None
+        if len(user_data) < self.min_samples:
+            print(f"\nInsufficient data for user {user_id}. Skipping.")
+            return
 
-        # Initialize dictionaries to store models and scalers for each feature
-        self.user_models[user_id] = {}
-        self.user_scalers[user_id] = {}
+        user_models = {}
+        user_scalers = {}
+        categorical_columns = {}
 
-        features_to_train = [
-            'hour_of_timestamp', 'phone_versions', 'iOS sum', 'Android sum', 'is_denied', 'session_duration'
-        ]
-
-        for feature in features_to_train:
+        for feature in self.features:
             feature_data = user_data[[feature]].copy()
-            feature_data = feature_data.apply(pd.to_numeric, errors='coerce').fillna(0)
+
+            if feature in ['phone_versions', 'location_or_ip']:
+                feature_data = pd.get_dummies(feature_data, prefix=feature)
+                categorical_columns[feature] = feature_data.columns.tolist()
+            else:
+                feature_data = feature_data.apply(pd.to_numeric, errors='coerce').fillna(0)
 
             scaler = StandardScaler()
             scaled_feature = scaler.fit_transform(feature_data)
 
-            lof = LocalOutlierFactor(n_neighbors=min(5, len(user_data) - 1), contamination=0.1)
+            lof = LocalOutlierFactor(n_neighbors=min(5, len(user_data) - 1), contamination=0.1, novelty=True)
             lof.fit(scaled_feature)
 
-            self.user_models[user_id][feature] = lof
-            self.user_scalers[user_id][feature] = scaler
+            user_models[feature] = lof
+            user_scalers[feature] = scaler
+
+        # Split data for testing
+        _, test_data = train_test_split(user_data, test_size=0.2, random_state=42)
+
+        with self.lock:
+            self.user_models[user_id] = user_models
+            self.user_scalers[user_id] = user_scalers
+            self.categorical_columns[user_id] = categorical_columns
+            self.user_test_data[user_id] = test_data
 
     def train_all_users(self):
         user_ids = self.profiler.df['user_id'].unique()
