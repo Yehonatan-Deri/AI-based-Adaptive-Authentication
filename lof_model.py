@@ -167,13 +167,24 @@ class LOFModel:
 
         return self.aggregate_scores(lof_scores, threshold_inbetween, threshold_invalid)
 
-    def calculate_profile_weight(self, profile_value, value):
-        # Define logic to calculate weight based on profile value and current value
-        # For simplicity, we can use an inverse relationship, where more deviation means a lower weight
-        deviation = abs(profile_value - value)
-        if deviation == 0:
-            return 1.0
-        return 1 / (1 + deviation)
+    def calculate_profile_weight(self, user_id, feature, value):
+        """
+        Calculate a weight based on how much a feature value deviates from the user's profile.
+
+        Args:
+            user_id (str): The ID of the user.
+            feature (str): The name of the feature.
+            value: The value of the feature for the current action.
+
+        Returns:
+            float: A weight between 0 and 1, where 1 indicates no deviation from the profile.
+        """
+        profile = self.profiler.create_user_profile(user_id)
+        if feature in profile:
+            profile_value = profile[feature]
+            deviation = abs(profile_value - value)
+            return 1 / (1 + deviation)
+        return 1.0
 
     def aggregate_scores(self, lof_scores, threshold_inbetween, threshold_invalid):
         total_weighted_score = 0
