@@ -375,6 +375,15 @@ class LOFModel:
         self.visualizer.visualize_user_anomalies(user_id, user_data, self.features)
 
     def analyze_user(self, user_id):
+        """
+        Perform a comprehensive analysis of a user's behavior and anomalies.
+
+        This method visualizes the user's data, predicts anomalies, compares normal and anomalous data,
+        visualizes categorical features, and prints statistics about the user's actions and anomalies.
+
+        Args:
+            user_id (str): The ID of the user to analyze.
+        """
         if user_id not in self.user_models:
             print(f"No model found for user {user_id}")
             return
