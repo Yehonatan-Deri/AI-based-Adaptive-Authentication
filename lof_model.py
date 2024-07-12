@@ -11,6 +11,8 @@ import threading
 from tqdm import tqdm
 import random
 
+import pickle
+import os
 
 class LOFModel:
     """
@@ -20,7 +22,7 @@ class LOFModel:
     for each user and provides methods for prediction and evaluation.
     """
 
-    def __init__(self, preprocessed_df, min_samples=5, max_workers=None):
+    def __init__(self, preprocessed_df, min_samples=5, max_workers=None, save_models=False):
         """
         Initialize the LOF model.
 
@@ -28,6 +30,7 @@ class LOFModel:
             preprocessed_df (pd.DataFrame): Preprocessed dataframe containing user data.
             min_samples (int): Minimum number of samples required to train a user model.
             max_workers (int): Maximum number of threads to use for parallel processing.
+            save_models (bool): Whether to save trained models to disk.
 
         Attributes:
             profiler (UserProfiler): User profiling object.
@@ -38,6 +41,7 @@ class LOFModel:
             features (list): List of features used in the model.
             feature_weights (dict): Weights assigned to each feature for anomaly scoring.
             feature_thresholds (dict): Thresholds for each feature to determine anomalies.
+            save_models (bool): Whether to save trained models to disk.
         """
         self.profiler = UserProfiler(preprocessed_df)
         self.user_models = {}
@@ -46,6 +50,7 @@ class LOFModel:
         self.categorical_columns = {}
         self.min_samples = min_samples
         self.max_workers = max_workers
+        self.save_models = save_models
         self.lock = threading.Lock()
         self.features = ['hour_of_timestamp', 'phone_versions', 'iOS sum', 'Android sum', 'is_denied',
                          'session_duration', 'location_or_ip']
@@ -109,6 +114,9 @@ class LOFModel:
             self.categorical_columns[user_id] = categorical_columns
             self.user_test_data[user_id] = test_data
 
+        if self.save_models:
+            self.save_user_model(user_id)
+
     def train_all_users(self):
         """
         Train LOF models for all users in parallel.
@@ -118,6 +126,55 @@ class LOFModel:
         user_ids = list(self.profiler.df['user_id'].unique())
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             list(tqdm(executor.map(self.train_user_model, user_ids), total=len(user_ids), desc="Training users"))
+
+    def save_user_model(self, user_id):
+        """
+        Save a trained user model to disk.
+
+        Args:
+            user_id (str): The ID of the user whose model to save.
+        """
+        if not os.path.exists('lof_trained_models'):
+            os.makedirs('lof_trained_models')
+
+        model_path = f'lof_trained_models/{user_id}_model.pkl'
+        with open(model_path, 'wb') as f:
+            pickle.dump({
+                'models': self.user_models[user_id],
+                'scalers': self.user_scalers[user_id],
+                'categorical_columns': self.categorical_columns.get(user_id, {}),
+                'test_data': self.user_test_data.get(user_id, None)
+            }, f)
+
+    def load_user_model(self, user_id):
+        """
+        Load a trained user model from disk.
+
+        Args:
+            user_id (str): The ID of the user whose model to load.
+
+        Returns:
+            bool: True if the model was successfully loaded, False otherwise.
+        """
+        model_path = f'lof_trained_models/{user_id}_model.pkl'
+        if os.path.exists(model_path):
+            with open(model_path, 'rb') as f:
+                data = pickle.load(f)
+                self.user_models[user_id] = data['models']
+                self.user_scalers[user_id] = data['scalers']
+                self.categorical_columns[user_id] = data['categorical_columns']
+                self.user_test_data[user_id] = data['test_data']
+            return True
+        return False
+
+    def train_or_load_all_users(self):
+        """
+        Train or load models for all users, depending on availability of saved models.
+        """
+        user_ids = list(self.profiler.df['user_id'].unique())
+        for user_id in tqdm(user_ids, desc="Training/Loading users"):
+            if not self.load_user_model(user_id):
+                self.train_user_model(user_id)
 
     def predict_user_action(self, user_id, action_features, threshold_inbetween=-2.5, threshold_invalid=-3.0):
         """
@@ -342,8 +399,8 @@ if __name__ == "__main__":
     preprocessed_file_path = 'csv_dir/jerusalem_location_15.csv'
     preprocessed_df = preprocess_data.Preprocessor(preprocessed_file_path).preprocess()
 
-    lof_model = LOFModel(preprocessed_df, max_workers=10)  # Adjust max_workers as needed
-    lof_model.train_all_users()
+    lof_model = LOFModel(preprocessed_df, max_workers=10, save_models=True)
+    lof_model.train_or_load_all_users()
 
     # Example usage
     example_user_id = 'aca17b2f-0840-4e47-a24a-66d47f9f16d7'
