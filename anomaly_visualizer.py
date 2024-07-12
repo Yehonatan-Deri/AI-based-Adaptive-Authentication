@@ -125,3 +125,13 @@ class AnomalyVisualizer:
             plt.ylabel("Density")
             plt.legend()
             plt.show()
+    def visualize_anomaly_comparison(self, user_id, normal_data, anomalous_data):
+        with self._suppress_warnings():
+            # Session Duration Distribution
+            self.visualize_feature_distribution(user_id, normal_data, anomalous_data, 'session_duration')
+
+            # Hour of Login Distribution
+            self.visualize_feature_distribution(user_id, normal_data, anomalous_data, 'hour_of_timestamp')
+
+        # Visualize locations on map
+        self.visualize_locations_on_map(user_id, normal_data, anomalous_data)
