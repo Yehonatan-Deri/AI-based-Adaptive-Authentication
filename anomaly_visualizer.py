@@ -4,7 +4,6 @@ import pandas as pd
 import numpy as np
 import warnings
 from contextlib import contextmanager
-from matplotlib.backends.backend_agg import FigureCanvasAgg
 
 
 class AnomalyVisualizer:
@@ -76,6 +75,7 @@ class AnomalyVisualizer:
             plt.legend()
             plt.tight_layout()
             plt.show()
+
     def visualize_anomaly_comparison(self, user_id, normal_data, anomalous_data):
         with self._suppress_warnings():
             # Session Duration Distribution
@@ -84,5 +84,8 @@ class AnomalyVisualizer:
             # Hour of Login Distribution
             self.visualize_feature_distribution(user_id, normal_data, anomalous_data, 'hour_of_timestamp')
 
-        # Visualize locations on map
-        self.visualize_locations_on_map(user_id, normal_data, anomalous_data)
+    def visualize_user_anomalies(self, user_id, user_data, features):
+        with self._suppress_warnings():
+            self.visualize_os_distribution(user_id, user_data)
+            self.visualize_action_approval(user_id, user_data)
+            self.visualize_phone_versions(user_id, user_data)
