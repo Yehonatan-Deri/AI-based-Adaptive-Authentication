@@ -14,6 +14,7 @@ from anomaly_visualizer import AnomalyVisualizer
 import pickle
 import os
 
+
 class LOFModel:
     """
     Local Outlier Factor (LOF) model for detecting anomalies in user behavior.
