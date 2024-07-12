@@ -10,7 +10,7 @@ import concurrent.futures
 import threading
 from tqdm import tqdm
 import random
-
+from anomaly_visualizer import AnomalyVisualizer
 import pickle
 import os
 
@@ -60,10 +60,11 @@ class LOFModel:
             'iOS sum': 0.1,
             'Android sum': 0.1,
             'is_denied': 0.2,
-            'session_duration': 0.1,
+            'session_duration': 0.2,
             'location_or_ip': 0.3
         }
         self.feature_thresholds = {feature: -1.5 for feature in self.features}
+        self.visualizer = AnomalyVisualizer()
 
     def train_user_model(self, user_id):
         """
@@ -80,7 +81,7 @@ class LOFModel:
         user_data = self.profiler.df[self.profiler.df['user_id'] == user_id]
 
         if len(user_data) < self.min_samples:
-            print(f"\nInsufficient data for user {user_id}. Skipping.")
+            # print(f"\nInsufficient data for user {user_id}. Skipping.") # Skip users with insufficient data
             return
 
         user_models = {}
@@ -355,42 +356,49 @@ class LOFModel:
 
     def visualize_anomalies(self, user_id):
         """
-        Visualize the distribution of features and a 2D projection of user data.
-
-        This method creates histograms for each numerical feature and a 2D scatter plot
-        of the first two principal components of the user's data.
+        Visualize anomalies for a specific user.
 
         Args:
-            user_id (str): The ID of the user to visualize data for.
+            user_id (str): The ID of the user to visualize anomalies for.
         """
         if user_id not in self.user_models:
             print(f"No model found for user {user_id}")
             return
 
         user_data = self.profiler.df[self.profiler.df['user_id'] == user_id]
+        self.visualizer.visualize_user_anomalies(user_id, user_data, self.features)
 
-        for feature in self.features:
-            if feature in ['phone_versions', 'location_or_ip']:
-                continue  # Skip visualization for categorical features
+    def analyze_user(self, user_id):
+        if user_id not in self.user_models:
+            print(f"No model found for user {user_id}")
+            return
 
-            plt.figure(figsize=(10, 6))
-            sns.histplot(user_data[feature], kde=True)
-            plt.title(f"Distribution of {feature} for User {user_id}")
-            plt.xlabel(feature)
-            plt.ylabel("Frequency")
-            plt.show()
+        user_data = self.profiler.df[self.profiler.df['user_id'] == user_id].copy()
 
-        # Visualize 2D projection of multi-dimensional data
-        features_to_plot = [f for f in self.features if f not in ['phone_versions', 'location_or_ip']]
-        X = user_data[features_to_plot]
-        X_scaled = StandardScaler().fit_transform(X)
+        # Predict anomalies
+        predictions = []
+        for _, row in user_data.iterrows():
+            action_features = {feature: row[feature] for feature in self.features}
+            prediction = self.predict_user_action(user_id, action_features)
+            predictions.append(prediction)
 
-        plt.figure(figsize=(12, 8))
-        plt.scatter(X_scaled[:, 0], X_scaled[:, 1], c='blue', alpha=0.5)
-        plt.title(f"2D Projection of User {user_id} Data")
-        plt.xlabel("First Principal Component")
-        plt.ylabel("Second Principal Component")
-        plt.show()
+        user_data['prediction'] = predictions
+
+        # Visualize all user data
+        self.visualizer.visualize_user_anomalies(user_id, user_data, self.features)
+
+        # Visualize comparison between normal and anomalous data
+        normal_data = user_data[user_data['prediction'] == 'valid']
+        anomalous_data = user_data[user_data['prediction'].isin(['need_second_check', 'invalid'])]
+        self.visualizer.visualize_anomaly_comparison(user_id, normal_data, anomalous_data, self.features)
+
+        # Print some statistics
+        print(f"\nAnalysis for User {user_id}:")
+        print(f"Total actions: {len(user_data)}")
+        print(f"Valid actions: {len(normal_data)}")
+        print(f"Anomalous actions: {len(anomalous_data)}")
+        print("\nAnomaly breakdown:")
+        print(user_data['prediction'].value_counts())
 
 
 if __name__ == "__main__":
@@ -413,8 +421,18 @@ if __name__ == "__main__":
         'session_duration': 300,
         'location_or_ip': 'Jerusalem, Israel (212.117.143.250)'
     }
-    prediction = lof_model.predict_user_action(example_user_id, example_action_features)
-    print(f"Prediction for new action: {prediction}")
+    # prediction = lof_model.predict_user_action(example_user_id, example_action_features)
+    # print(f"Prediction for new action: {prediction}")
 
+    # Evaluate the model
     lof_model.evaluate_model()
-    lof_model.visualize_anomalies(example_user_id)
+
+    # # Visualize anomalies for the example user
+    # lof_model.visualize_anomalies(example_user_id)
+
+    # Perform comprehensive analysis for the example user
+    lof_model.analyze_user(example_user_id)
+
+    # You can add more users to analyze here
+    # other_user_id = 'another-user-id'
+    # lof_model.analyze_user(other_user_id)
