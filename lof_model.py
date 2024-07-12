@@ -22,7 +22,7 @@ class LOFModel:
     for each user and provides methods for prediction and evaluation.
     """
 
-    def __init__(self, preprocessed_df, min_samples=5, max_workers=None, save_models=False):
+    def __init__(self, preprocessed_df, min_samples=5, max_workers=None, save_models=False, overwrite_models=False):
         """
         Initialize the LOF model.
 
@@ -51,6 +51,7 @@ class LOFModel:
         self.min_samples = min_samples
         self.max_workers = max_workers
         self.save_models = save_models
+        self.overwrite_models = overwrite_models
         self.lock = threading.Lock()
         self.features = ['hour_of_timestamp', 'phone_versions', 'iOS sum', 'Android sum', 'is_denied',
                          'session_duration', 'location_or_ip']
@@ -139,6 +140,11 @@ class LOFModel:
             os.makedirs('lof_trained_models')
 
         model_path = f'lof_trained_models/{user_id}_model.pkl'
+
+        if not self.overwrite_models and os.path.exists(model_path):
+            print(f"Model for user {user_id} already exists. Skipping save.")
+            return
+
         with open(model_path, 'wb') as f:
             pickle.dump({
                 'models': self.user_models[user_id],
@@ -174,7 +180,7 @@ class LOFModel:
         """
         user_ids = list(self.profiler.df['user_id'].unique())
         for user_id in tqdm(user_ids, desc="Training/Loading users"):
-            if not self.load_user_model(user_id):
+            if self.overwrite_models or not self.load_user_model(user_id):
                 self.train_user_model(user_id)
 
     def predict_user_action(self, user_id, action_features, threshold_inbetween=-2.5, threshold_invalid=-3.0):
@@ -390,7 +396,7 @@ class LOFModel:
         # Visualize comparison between normal and anomalous data
         normal_data = user_data[user_data['prediction'] == 'valid']
         anomalous_data = user_data[user_data['prediction'].isin(['need_second_check', 'invalid'])]
-        self.visualizer.visualize_anomaly_comparison(user_id, normal_data, anomalous_data, self.features)
+        self.visualizer.visualize_anomaly_comparison(user_id, normal_data, anomalous_data)
 
         # Print some statistics
         print(f"\nAnalysis for User {user_id}:")
@@ -407,7 +413,7 @@ if __name__ == "__main__":
     preprocessed_file_path = 'csv_dir/jerusalem_location_15.csv'
     preprocessed_df = preprocess_data.Preprocessor(preprocessed_file_path).preprocess()
 
-    lof_model = LOFModel(preprocessed_df, max_workers=10, save_models=True)
+    lof_model = LOFModel(preprocessed_df, max_workers=10, save_models=True, overwrite_models=False)
     lof_model.train_or_load_all_users()
 
     # Example usage
