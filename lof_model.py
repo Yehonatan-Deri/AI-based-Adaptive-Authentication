@@ -281,26 +281,36 @@ class LOFModel:
         """
         results = {"valid": 0, "need_second_check": 0, "invalid": 0}
         user_results = {}
+        all_user_data = []
         user_ids = list(self.user_test_data.keys())
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            future_to_user = {executor.submit(self.evaluate_user, user_id): user_id for user_id in user_ids}
-            for future in tqdm(concurrent.futures.as_completed(future_to_user), total=len(user_ids),
-                               desc="Evaluating users"):
-                user_id = future_to_user[future]
-                user_result = future.result()
-                user_results[user_id] = user_result
-                with self.lock:
-                    for key in results:
-                        results[key] += user_result[key]
+        for user_id in tqdm(user_ids, desc="Evaluating users"):
+            user_data, normal_data, anomalous_data = self.analyze_user(user_id, print_results=False)
+
+            user_result = {
+                "valid": len(normal_data),
+                "need_second_check": len(anomalous_data[anomalous_data['prediction'] == 'need_second_check']),
+                "invalid": len(anomalous_data[anomalous_data['prediction'] == 'invalid'])
+            }
+
+            user_results[user_id] = user_result
+            all_user_data.append(user_data)
+
+            for key in results:
+                results[key] += user_result[key]
+
+        all_user_data = pd.concat(all_user_data, ignore_index=True)
 
         total = sum(results.values())
-        print("Evaluation Results:")
+        evaluation_content = "Evaluation Results:\n"
         for category, count in results.items():
             percentage = (count / total) * 100 if total > 0 else 0
-            print(f"{category.capitalize()}: {count} ({percentage:.2f}%)")
+            evaluation_content += f"{category.capitalize()}: {count} ({percentage:.2f}%)\n"
 
-        self.display_random_anomalies(user_results)
+        print(self.visualizer.create_boxed_output(evaluation_content.strip(), "Model Evaluation"))
+
+        user_profiles = {user_id: self.profiler.create_user_profile(user_id) for user_id in user_ids}
+        self.display_random_anomalies(user_results, user_profiles, all_user_data)
 
     def evaluate_user(self, user_id):
         """
@@ -313,17 +323,23 @@ class LOFModel:
             dict: A dictionary containing counts of valid, need_second_check, and invalid predictions.
         """
         user_results = {"valid": 0, "need_second_check": 0, "invalid": 0}
-        test_data = self.user_test_data[user_id]
+        test_data = self.user_test_data[user_id].copy()
+        predictions = []
+
         for _, row in test_data.iterrows():
             action_features = {feature: row[feature] for feature in self.features}
             try:
                 prediction = self.predict_user_action(user_id, action_features)
                 user_results[prediction] += 1
+                predictions.append(prediction)
             except Exception as e:
                 print(f"Error in prediction for user {user_id}: {e}")
-        return user_results
+                predictions.append("error")
 
-    def display_random_anomalies(self, user_results):
+        test_data['prediction'] = predictions
+        return user_results, test_data
+
+    def display_random_anomalies(self, user_results, user_profiles, user_data):
         """
         Display random anomalies from the 'need_second_check' and 'invalid' categories.
 
@@ -336,30 +352,33 @@ class LOFModel:
         need_second_check_users = [user for user, results in user_results.items() if results['need_second_check'] > 0]
         invalid_users = [user for user, results in user_results.items() if results['invalid'] > 0]
 
-        for category in ['need_second_check', 'invalid']:
-            users = need_second_check_users if category == 'need_second_check' else invalid_users
-            print(f"\nDisplaying 3 random users from {category} category:")
+        for category, users in [('need_second_check', need_second_check_users), ('invalid', invalid_users)]:
+            if users:
+                print(self.visualizer.create_boxed_output(f"Displaying up to 3 random users from {category} category:",
+                                                          "Random Users Sample"))
+                for user in np.random.choice(users, min(3, len(users)), replace=False):
+                    content = f"User ID: {user}\n\n"
 
-            for user in random.sample(users, min(3, len(users))):
-                print(f"\nUser ID: {user}")
-                profile = self.profiler.create_user_profile(user)
-                print("User Profile:")
-                for key, value in profile.items():
-                    print(f"  {key}: {value}")
+                    # Add user profile
+                    content += "User Profile:\n"
+                    profile = user_profiles[user]
+                    for key, value in profile.items():
+                        content += f"  {key}: {value}\n"
+                    content += "\n"
 
-                print("\nAnomalous Actions:")
-                test_data = self.user_test_data[user]
-                anomalous_actions = []
-                for _, row in test_data.iterrows():
-                    action_features = {feature: row[feature] for feature in self.features}
-                    prediction = self.predict_user_action(user, action_features)
-                    if prediction == category:
-                        anomalous_actions.append(action_features)
+                    # Add anomalous actions
+                    content += f"Anomalous Actions ({category}):\n"
+                    user_anomalies = user_data[(user_data['user_id'] == user) & (user_data['prediction'] == category)]
+                    for _, action in user_anomalies.iterrows():
+                        content += "  Action:\n"
+                        for feature in self.features:
+                            content += f"    {feature}: {action[feature]}\n"
+                        content += "\n"
 
-                for i, action in enumerate(random.sample(anomalous_actions, min(3, len(anomalous_actions)))):
-                    print(f"  Anomalous Action {i + 1}:")
-                    for key, value in action.items():
-                        print(f"    {key}: {value}")
+                    print(self.visualizer.create_boxed_output(content.strip()))
+            else:
+                print(self.visualizer.create_boxed_output(f"No users found in {category} category",
+                                                          "Random Users Sample"))
 
     def visualize_anomalies(self, user_id):
         """
@@ -375,7 +394,7 @@ class LOFModel:
         user_data = self.profiler.df[self.profiler.df['user_id'] == user_id]
         self.visualizer.visualize_user_anomalies(user_id, user_data, self.features)
 
-    def analyze_user(self, user_id):
+    def analyze_user(self, user_id, print_results=False):
         """
         Perform a comprehensive analysis of a user's behavior and anomalies.
 
@@ -450,7 +469,7 @@ if __name__ == "__main__":
     # lof_model.visualize_anomalies(example_user_id)
 
     # Perform comprehensive analysis for the example user
-    lof_model.analyze_user(example_user_id)
+    lof_model.analyze_user(example_user_id, print_results=True)
 
     # You can add more users to analyze here
     # other_user_id = 'another-user-id'
