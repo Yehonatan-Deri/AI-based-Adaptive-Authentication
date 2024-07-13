@@ -400,21 +400,24 @@ class LOFModel:
 
         user_data['prediction'] = predictions
 
-        # Visualize all user data
-        self.visualizer.visualize_user_anomalies(user_id, user_data, self.features)
-
-        # Visualize comparison between normal and anomalous data
+        # Prepare the content for the boxed output
         normal_data = user_data[user_data['prediction'] == 'valid']
         anomalous_data = user_data[user_data['prediction'].isin(['need_second_check', 'invalid'])]
-        self.visualizer.visualize_anomaly_comparison(user_id, normal_data, anomalous_data)
 
-        # Print some statistics
-        print(f"\nAnalysis for User {user_id}:")
-        print(f"Total actions: {len(user_data)}")
-        print(f"Valid actions: {len(normal_data)}")
-        print(f"Anomalous actions: {len(anomalous_data)}")
-        print("\nAnomaly breakdown:")
-        print(user_data['prediction'].value_counts())
+        breakdown = user_data['prediction'].value_counts()
+
+        if print_results:
+            content = f"""Analysis for User {user_id}:
+            Total actions: {len(user_data)}
+            Valid actions: {len(normal_data)}
+            Anomalous actions: {len(anomalous_data)}
+            Anomaly breakdown:
+            {breakdown.to_string()}"""
+
+            # Print the boxed output
+            print(self.visualizer.create_boxed_output(content, "User Analysis Summary"))
+
+        return user_data, normal_data, anomalous_data
 
 
 if __name__ == "__main__":
