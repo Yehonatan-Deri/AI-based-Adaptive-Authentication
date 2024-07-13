@@ -427,14 +427,17 @@ class LOFModel:
 
         if print_results:
             content = f"""Analysis for User {user_id}:
-            Total actions: {len(user_data)}
-            Valid actions: {len(normal_data)}
-            Anomalous actions: {len(anomalous_data)}
-            Anomaly breakdown:
-            {breakdown.to_string()}"""
+        Total actions: {len(user_data)}
+        Valid actions: {len(normal_data)}
+        Anomalous actions: {len(anomalous_data)}
+        Anomaly breakdown:
+        {breakdown.to_string()}"""
 
             # Print the boxed output
             print(self.visualizer.create_boxed_output(content, "User Analysis Summary"))
+
+            # Visualize feature distributions
+            self.visualizer.visualize_feature_distributions(user_id, user_data)
 
         return user_data, normal_data, anomalous_data
 
