@@ -14,6 +14,7 @@ import preprocess_data
 import os
 from anomaly_visualizer import AnomalyVisualizer
 
+
 class IsolationForestModel:
     def __init__(self, preprocessed_df, n_estimators=100, contamination=0.1, random_state=42, min_samples=5,
                  max_workers=None, save_models=False, overwrite_models=False, save_evaluations=False,
@@ -319,6 +320,7 @@ class IsolationForestModel:
             self.visualizer.visualize_feature_distributions(user_id, user_data)
 
         return user_data, normal_data, anomalous_data
+
 
 if __name__ == "__main__":
     preprocessed_file_path = 'csv_dir/jerusalem_location_15.csv'
