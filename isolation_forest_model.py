@@ -94,10 +94,10 @@ class IsolationForestModel:
             list(tqdm(executor.map(self.train_user_model, user_ids), total=len(user_ids), desc="Training users"))
 
     def save_user_model(self, user_id):
-        if not os.path.exists('iforest_trained_models'):
-            os.makedirs('iforest_trained_models')
+        if not os.path.exists('isolation_forest_trained_models'):
+            os.makedirs('isolation_forest_trained_models')
 
-        model_path = f'iforest_trained_models/{user_id}_model.pkl'
+        model_path = f'isolation_forest_trained_models/{user_id}_model.pkl'
 
         if not self.overwrite_models and os.path.exists(model_path):
             print(f"Model for user {user_id} already exists. Skipping save.")
@@ -112,7 +112,7 @@ class IsolationForestModel:
             }, f)
 
     def load_user_model(self, user_id):
-        model_path = f'iforest_trained_models/{user_id}_model.pkl'
+        model_path = f'isolation_forest_trained_models/{user_id}_model.pkl'
         if os.path.exists(model_path):
             try:
                 with open(model_path, 'rb') as f:
@@ -185,10 +185,10 @@ class IsolationForestModel:
             return "valid"
 
     def save_evaluation(self, user_id, evaluation_result):
-        if not os.path.exists('iforest_evaluations'):
-            os.makedirs('iforest_evaluations')
+        if not os.path.exists('isolation_forest_evaluations'):
+            os.makedirs('isolation_forest_evaluations')
 
-        eval_path = f'iforest_evaluations/{user_id}_evaluation.pkl'
+        eval_path = f'isolation_forest_evaluations/{user_id}_evaluation.pkl'
 
         if not self.overwrite_evaluations and os.path.exists(eval_path):
             print(f"Evaluation for user {user_id} already exists. Skipping save.")
@@ -198,7 +198,7 @@ class IsolationForestModel:
             pickle.dump(evaluation_result, f)
 
     def load_evaluation(self, user_id):
-        eval_path = f'iforest_evaluations/{user_id}_evaluation.pkl'
+        eval_path = f'isolation_forest_evaluations/{user_id}_evaluation.pkl'
         if os.path.exists(eval_path):
             with open(eval_path, 'rb') as f:
                 return pickle.load(f)
