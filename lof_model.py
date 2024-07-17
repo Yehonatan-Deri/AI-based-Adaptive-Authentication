@@ -487,7 +487,7 @@ if __name__ == "__main__":
     lof_model.train_or_load_all_users()
 
     # Example usage
-    example_user_id = 'aca17b2f-0840-4e47-a24a-66d47f9f16d7'
+    example_user_id = '3d737fb3-c55a-4f8a-99e4-4b9c02aeb4b5'
     example_action_features = {
         'hour_of_timestamp': 15,
         'phone_versions': 'iPhone14_5',
