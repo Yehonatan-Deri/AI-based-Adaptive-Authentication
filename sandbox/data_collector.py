@@ -45,7 +45,7 @@ datetime_format = "%b %d, %Y @ %H:%M:%S.%f"
 
 
 def load_df(df_path: str,
-            to_drop: bool = False,
+            to_drop: bool = True,
             save_csv: bool = False) -> pd.DataFrame:
     """
     Load a DataFrame from a CSV file and drop the columns in the TO_DROP list
@@ -207,11 +207,28 @@ def create_user_profiles(merged_data: pd.DataFrame,
     return user_profiles_df
 
 
+def get_user_profiles(df_path: str,
+                      to_drop: bool = True,
+                      save_csv: bool = False) -> pd.DataFrame:
+    """
+    Load the user profiles from the CSV file and return the DataFrame
+
+    :return: DataFrame
+    """
+    df = load_df(df_path=df_path,
+                 to_drop=to_drop,
+                 save_csv=save_csv)
+
+    merged_data = extract_data_and_merge_auths(df)
+
+    return create_user_profiles(merged_data=merged_data, save_csv=False)
+
+
 if __name__ == "__main__":
     """
     main function for testing the functions
     """
-    df = load_df(df_path='../csv_dir/data_after_dropped.csv',
+    df = load_df(df_path='../csv_dir/test_year_status.csv',
                  to_drop=True,
                  save_csv=False)
 

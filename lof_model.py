@@ -23,7 +23,8 @@ class LOFModel:
     for each user and provides methods for prediction and evaluation.
     """
 
-    def __init__(self, preprocessed_df, min_samples=5, max_workers=None, save_models=False, overwrite_models=False):
+    def __init__(self, preprocessed_df, min_samples=5, max_workers=None, save_models=False,
+                 overwrite_models=False, save_evaluations=False, overwrite_evaluations=False):
         """
         Initialize the LOF model.
 
@@ -53,6 +54,8 @@ class LOFModel:
         self.max_workers = max_workers
         self.save_models = save_models
         self.overwrite_models = overwrite_models
+        self.save_evaluations = save_evaluations
+        self.overwrite_evaluations = overwrite_evaluations
         self.lock = threading.Lock()
         self.features = ['hour_of_timestamp', 'phone_versions', 'iOS sum', 'Android sum', 'is_denied',
                          'session_duration', 'location_or_ip']
@@ -184,7 +187,7 @@ class LOFModel:
             if self.overwrite_models or not self.load_user_model(user_id):
                 self.train_user_model(user_id)
 
-    def predict_user_action(self, user_id, action_features, threshold_inbetween=-2.5, threshold_invalid=-3.0):
+    def predict_user_action(self, user_id, action_features, threshold_inbetween=-2.0, threshold_invalid=-3.0):
         """
         Predict whether a user action is anomalous.
 
@@ -272,6 +275,26 @@ class LOFModel:
         else:
             return "valid"
 
+    def save_evaluation(self, user_id, evaluation_result):
+        if not os.path.exists('lof_evaluations'):
+            os.makedirs('lof_evaluations')
+
+        eval_path = f'lof_evaluations/{user_id}_evaluation.pkl'
+
+        if not self.overwrite_evaluations and os.path.exists(eval_path):
+            print(f"Evaluation for user {user_id} already exists. Skipping save.")
+            return
+
+        with open(eval_path, 'wb') as f:
+            pickle.dump(evaluation_result, f)
+
+    def load_evaluation(self, user_id):
+        eval_path = f'lof_evaluations/{user_id}_evaluation.pkl'
+        if os.path.exists(eval_path):
+            with open(eval_path, 'rb') as f:
+                return pickle.load(f)
+        return None
+
     def evaluate_model(self):
         """
         Evaluate the model on test data for all users.
@@ -285,7 +308,18 @@ class LOFModel:
         user_ids = list(self.user_test_data.keys())
 
         for user_id in tqdm(user_ids, desc="Evaluating users"):
-            user_data, normal_data, anomalous_data = self.analyze_user(user_id, print_results=False)
+            if self.save_evaluations and not self.overwrite_evaluations:
+                loaded_evaluation = self.load_evaluation(user_id)
+                if loaded_evaluation is not None:
+                    user_data, normal_data, anomalous_data = loaded_evaluation
+                else:
+                    user_data, normal_data, anomalous_data = self.analyze_user(user_id, print_results=False)
+                    if self.save_evaluations:
+                        self.save_evaluation(user_id, (user_data, normal_data, anomalous_data))
+            else:
+                user_data, normal_data, anomalous_data = self.analyze_user(user_id, print_results=False)
+                if self.save_evaluations:
+                    self.save_evaluation(user_id, (user_data, normal_data, anomalous_data))
 
             user_result = {
                 "valid": len(normal_data),
@@ -427,14 +461,17 @@ class LOFModel:
 
         if print_results:
             content = f"""Analysis for User {user_id}:
-            Total actions: {len(user_data)}
-            Valid actions: {len(normal_data)}
-            Anomalous actions: {len(anomalous_data)}
-            Anomaly breakdown:
-            {breakdown.to_string()}"""
+        Total actions: {len(user_data)}
+        Valid actions: {len(normal_data)}
+        Anomalous actions: {len(anomalous_data)}
+        Anomaly breakdown:
+        {breakdown.to_string()}"""
 
             # Print the boxed output
             print(self.visualizer.create_boxed_output(content, "User Analysis Summary"))
+
+            # Visualize feature distributions
+            self.visualizer.visualize_feature_distributions(user_id, user_data)
 
         return user_data, normal_data, anomalous_data
 
@@ -445,11 +482,12 @@ if __name__ == "__main__":
     preprocessed_file_path = 'csv_dir/jerusalem_location_15.csv'
     preprocessed_df = preprocess_data.Preprocessor(preprocessed_file_path).preprocess()
 
-    lof_model = LOFModel(preprocessed_df, max_workers=10, save_models=True, overwrite_models=False)
+    lof_model = LOFModel(preprocessed_df, max_workers=10, save_models=True, overwrite_models=False,
+                         save_evaluations=True, overwrite_evaluations=False)
     lof_model.train_or_load_all_users()
 
     # Example usage
-    example_user_id = 'aca17b2f-0840-4e47-a24a-66d47f9f16d7'
+    example_user_id = '3d737fb3-c55a-4f8a-99e4-4b9c02aeb4b5'
     example_action_features = {
         'hour_of_timestamp': 15,
         'phone_versions': 'iPhone14_5',

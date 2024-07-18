@@ -70,14 +70,40 @@ class AnomalyVisualizer:
         table_content = self._print_table(data, ["Phone Version", "Count", "Percentage"])
         print(self.create_boxed_output(table_content, f"Phone Versions Distribution for User {user_id}"))
 
-    def visualize_feature_distribution(self, user_id, normal_data, anomalous_data, feature):
+    def visualize_session_duration(self, user_id, normal_data, anomalous_data):
         with self._suppress_warnings():
             plt.figure(figsize=(12, 6))
-            sns.histplot(normal_data[feature], kde=True, color="blue", label="Normal", alpha=0.5)
-            sns.histplot(anomalous_data[feature], kde=True, color="red", label="Anomalous", alpha=0.5)
-            plt.title(f"Distribution of {feature} for User {user_id}")
-            plt.xlabel(feature)
+            sns.histplot(normal_data['session_duration'], kde=True, color="blue", label="Normal", alpha=0.5)
+            sns.histplot(anomalous_data['session_duration'], kde=True, color="red", label="Anomalous", alpha=0.5)
+            plt.title(f"Distribution of session_duration for User {user_id}")
+            plt.xlabel("session_duration")
             plt.ylabel("Density")
+            plt.legend()
+            plt.tight_layout()
+            plt.show()
+
+    def visualize_feature_distributions(self, user_id, user_data):
+        with self._suppress_warnings():
+            # Session Duration
+            plt.figure(figsize=(12, 6))
+            sns.histplot(data=user_data, x='session_duration', kde=True, color="blue", label="All Data")
+            sns.histplot(data=user_data[user_data['prediction'] != 'valid'], x='session_duration',
+                         kde=True, color="red", label="Anomalies")
+            plt.title(f"Distribution of session_duration for User {user_id}")
+            plt.xlabel("session_duration")
+            plt.ylabel("Count")
+            plt.legend()
+            plt.tight_layout()
+            plt.show()
+
+            # Hour of Login
+            plt.figure(figsize=(12, 6))
+            sns.histplot(data=user_data, x='hour_of_timestamp', kde=True, color="blue", label="All Data")
+            sns.histplot(data=user_data[user_data['prediction'] != 'valid'], x='hour_of_timestamp',
+                         kde=True, color="red", label="Anomalies")
+            plt.title(f"Distribution of login hour for User {user_id}")
+            plt.xlabel("hour_of_timestamp")
+            plt.ylabel("Count")
             plt.legend()
             plt.tight_layout()
             plt.show()
