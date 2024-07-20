@@ -13,6 +13,7 @@ import pickle
 import os
 from anomaly_visualizer import AnomalyVisualizer
 
+
 class OCSVMModel:
     def __init__(self, preprocessed_df, kernel='rbf', nu=0.1, gamma='scale', min_samples=5, max_workers=None,
                  save_models=False, overwrite_models=False, save_evaluations=False, overwrite_evaluations=False):
@@ -135,6 +136,7 @@ class OCSVMModel:
             self.train_user_model(user_id)
             trained_count += 1
         # print(f"Loaded {loaded_count} models, trained {trained_count} models")
+
     # todo delete print
     def predict_user_action(self, user_id, action_features, threshold_inbetween=-0.2, threshold_invalid=-0.5):
         if user_id not in self.user_models:
@@ -321,6 +323,7 @@ class OCSVMModel:
             self.visualizer.visualize_feature_distributions(user_id, user_data)
 
         return user_data, normal_data, anomalous_data
+
 
 if __name__ == "__main__":
     import preprocess_data
