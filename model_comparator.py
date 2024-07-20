@@ -148,18 +148,42 @@ class ModelComparator:
 
     def plot_roc_curves(self):
         plt.figure(figsize=(10, 8))
+
         for model_name, evaluations in self.evaluation_results.items():
             true_labels = []
-            predicted_labels = []
+            predicted_scores = []
             for user_id, (user_data, _, _) in evaluations.items():
                 true_labels.extend([1 if label != 0 else 0 for label in user_data['is_denied']])
-                # Assuming 'prediction' contains the model's decision (0 for normal, 1 or 2 for anomaly)
-                predicted_labels.extend([1 if pred != 'valid' else 0 for pred in user_data['prediction']])
 
-            fpr, tpr, _ = roc_curve(true_labels, predicted_labels)
+                # Convert categorical predictions to numeric scores
+                score_map = {'valid': 0, 'need_second_check': 0.5, 'invalid': 1}
+                scores = [score_map[pred] for pred in user_data['prediction']]
+                predicted_scores.extend(scores)
+
+            # Convert to numpy arrays
+            true_labels = np.array(true_labels)
+            predicted_scores = np.array(predicted_scores)
+
+            # Print debug information
+            print(f"Model: {model_name}")
+            print(f"True labels shape: {true_labels.shape}")
+            print(f"Predicted scores shape: {predicted_scores.shape}")
+            print(f"Unique true labels: {np.unique(true_labels)}")
+            print(f"Unique predicted scores: {np.unique(predicted_scores)}")
+
+            # Ensure we have both positive and negative cases
+            if len(np.unique(true_labels)) < 2:
+                print(f"Warning: Only one class present in true labels for {model_name}")
+                continue
+
+            fpr, tpr, _ = roc_curve(true_labels, predicted_scores)
             roc_auc = auc(fpr, tpr)
 
             plt.plot(fpr, tpr, label=f'{model_name} (AUC = {roc_auc:.2f})')
+
+            # Print the first and last points of the ROC curve
+            print(f"First point of ROC curve: ({fpr[0]:.4f}, {tpr[0]:.4f})")
+            print(f"Last point of ROC curve: ({fpr[-1]:.4f}, {tpr[-1]:.4f})")
 
         plt.plot([0, 1], [0, 1], linestyle='--', label='Random Classifier')
         plt.xlabel('False Positive Rate')
