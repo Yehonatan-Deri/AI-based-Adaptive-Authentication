@@ -12,11 +12,13 @@ from tqdm import tqdm
 import pickle
 import os
 from anomaly_visualizer import AnomalyVisualizer
+from sklearn.cluster import KMeans
+import warnings
 
 
 class OCSVMModel:
-    def __init__(self, preprocessed_df, kernel='rbf', nu=0.1, gamma='scale', min_samples=5, max_workers=None,
-                 save_models=False, overwrite_models=False, save_evaluations=False, overwrite_evaluations=False):
+    def __init__(self, preprocessed_df, kernel='rbf', nu=0.1, gamma='scale', min_samples=2, max_workers=None,
+                 save_models=True, overwrite_models=False, save_evaluations=True, overwrite_evaluations=False):
         self.profiler = UserProfiler(preprocessed_df)
         self.user_models = {}
         self.user_scalers = {}
@@ -290,6 +292,70 @@ class OCSVMModel:
         user_data = self.profiler.df[self.profiler.df['user_id'] == user_id]
         self.visualizer.visualize_user_anomalies(user_id, user_data, self.features)
 
+    def analyze_user_patterns_with_kmeans(self, user_id, feature, n_clusters=2):
+        """
+        Analyze user patterns using k-means clustering and visualize the distribution.
+
+        :param user_id: ID of the user to analyze
+        :param feature: 'hour_of_timestamp' or 'session_duration'
+        :param n_clusters: Number of clusters to use in k-means
+        """
+        # Suppress specific warnings
+        warnings.filterwarnings("ignore", message="Blended transforms not yet supported.")
+
+        user_data = self.profiler.df[self.profiler.df['user_id'] == user_id]
+
+        # Extract the feature data
+        X = user_data[feature].values.reshape(-1, 1)
+
+        # Apply k-means clustering
+        kmeans = KMeans(n_clusters=n_clusters, random_state=42)
+        labels = kmeans.fit_predict(X)
+        centers = kmeans.cluster_centers_.flatten()
+
+        # Create the plot
+        plt.figure(figsize=(12, 6))
+
+        # Plot the distribution
+        sns.histplot(X, kde=True, color="blue", alpha=0.5)
+
+        # Plot the k-means centers
+        for center in centers:
+            plt.axvline(x=center, color='red', linestyle='--', label='Cluster Center')
+
+        # Identify potential anomalies
+        distances = np.min(np.abs(X - centers), axis=1)
+        threshold = np.percentile(distances, 95)  # Using 95th percentile as threshold
+        anomalies = X[distances > threshold]
+
+        # Plot potential anomalies
+        plt.scatter(anomalies, np.zeros_like(anomalies), color='green', s=100, label='Potential Anomalies', zorder=5)
+
+        # Customize the plot
+        plt.title(f"Distribution of {feature} for User {user_id} with K-means Analysis")
+        plt.xlabel(feature)
+        plt.ylabel("Density")
+
+        # Add text annotations for cluster centers
+        y_max = plt.gca().get_ylim()[1]
+        for i, center in enumerate(centers):
+            plt.text(center, y_max * 0.95, f'Center {i + 1}: {center:.2f}',
+                     horizontalalignment='center', verticalalignment='top', rotation=90)
+
+        # Remove duplicate labels
+        handles, labels = plt.gca().get_legend_handles_labels()
+        by_label = dict(zip(labels, handles))
+        plt.legend(by_label.values(), by_label.keys())
+
+        plt.tight_layout()
+        plt.show()
+
+        # Print information about potential anomalies
+        print(f"Potential anomalies for {feature}:")
+        print(anomalies.flatten())
+
+        return centers, anomalies
+
     def analyze_user(self, user_id, print_results=False):
         if user_id not in self.user_models:
             print(f"No model found for user {user_id}")
@@ -321,6 +387,11 @@ class OCSVMModel:
             print(self.visualizer.create_boxed_output(content, "User Analysis Summary"))
 
             self.visualizer.visualize_feature_distributions(user_id, user_data)
+
+            # Add k-means analysis
+            self.analyze_user_patterns_with_kmeans(user_id, 'hour_of_timestamp')
+            self.analyze_user_patterns_with_kmeans(user_id, 'session_duration')
+
 
         return user_data, normal_data, anomalous_data
 
