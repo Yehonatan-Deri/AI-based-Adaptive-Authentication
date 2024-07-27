@@ -455,6 +455,47 @@ class ModelComparator:
 
         return challenging_cases
 
+    def plot_precision_recall_curves_with_kmeans(self):
+        plt.figure(figsize=(12, 10))
+
+        for model_name, evaluations in self.evaluation_results.items():
+            true_labels = []
+            predicted_scores = []
+            for user_id, (user_data, _, _) in evaluations.items():
+                true_labels.extend([1 if label != 0 else 0 for label in user_data['is_denied']])
+                score_map = {'valid': 0, 'need_second_check': 0.5, 'invalid': 1}
+                scores = [score_map[pred] for pred in user_data['prediction']]
+                predicted_scores.extend(scores)
+
+            true_labels = np.array(true_labels)
+            predicted_scores = np.array(predicted_scores)
+
+            if len(np.unique(true_labels)) < 2:
+                print(f"Warning: Only one class present in true labels for {model_name}")
+                continue
+
+            precision, recall, _ = precision_recall_curve(true_labels, predicted_scores)
+            average_precision = average_precision_score(true_labels, predicted_scores)
+
+            plt.plot(recall, precision, label=f'{model_name} (AP = {average_precision:.2f})')
+
+            # Apply K-means clustering
+            points = np.column_stack((recall, precision))
+            kmeans = KMeans(n_clusters=2, random_state=42)
+            cluster_labels = kmeans.fit_predict(points)
+
+            # # Plot both clusters
+            # for i in range(2):  # Changed from range(1) to range(2)
+            #     cluster_points = points[cluster_labels == i]
+            #     plt.scatter(cluster_points[:, 0], cluster_points[:, 1],
+            #                 label=f'{model_name} Cluster {i + 1}', alpha=0.7, s=150)
+
+        plt.xlabel('Recall')
+        plt.ylabel('Precision')
+        plt.title('Precision-Recall Curves with K-means Clustering')
+        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+        plt.tight_layout()
+        plt.show()
     def run_comparison(self):
         print("Loading evaluations...")
         self.load_evaluations()
