@@ -2,9 +2,8 @@
 # Description: This module is responsible for preprocessing the raw log data.
 import re
 
-import pandas as pd
 import numpy as np
-from datetime import datetime
+import pandas as pd
 
 
 class Preprocessor:
@@ -138,15 +137,6 @@ class Preprocessor:
         # Keep session duration only for finish messages
         self.df.loc[self.df['log_type'] != 'finish', 'session_duration'] = np.nan
 
-    # def fix_missing_values(self):
-    #     for column in self.df.columns:
-    #         if self.df[column].dtype == 'bool':
-    #             self.df[column] = self.df[column].fillna(False)
-    #         elif self.df[column].dtype == 'object':
-    #             self.df[column] = self.df[column].fillna('')
-    #         else:
-    #             self.df[column] = self.df[column].fillna(0)
-
     def combine_start_finish(self):
         # Extract start and finish rows
         start_rows = self.df[self.df['log_type'] == 'start']
@@ -173,6 +163,18 @@ class Preprocessor:
         self.df = combined_df[final_columns].copy()
         self.df.rename(columns={'user_id_start': 'user_id'}, inplace=True)
 
+    def calculate_approval_stats(self):
+        total_entries = len(self.df)
+        approved_count = self.df['is_approved'].sum()
+        denied_count = self.df['is_denied'].sum()
+
+        approved_percentage = (approved_count / total_entries) * 100
+        denied_percentage = (denied_count / total_entries) * 100
+
+        print(f"Total entries: {total_entries}")
+        print(f"Approved entries: {approved_count} ({approved_percentage:.2f}%)")
+        print(f"Denied entries: {denied_count} ({denied_percentage:.2f}%)")
+
     def preprocess(self):
         self.load_data()
         self.drop_unwanted_columns()
@@ -184,7 +186,7 @@ class Preprocessor:
         self.calculate_session_duration()
         self.fill_missing_values()
         self.combine_start_finish()
-        # self.fix_missing_values()
+        # self.calculate_approval_stats()
         return self.df
 
 
