@@ -1,27 +1,51 @@
+import concurrent.futures
+import os
+import pickle
+import threading
 import warnings
 
-import pandas as pd
+import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
+import seaborn as sns
+from sklearn.cluster import KMeans
 from sklearn.ensemble import IsolationForest
 from sklearn.metrics import silhouette_score
-from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
-from user_profiling import UserProfiler
-import matplotlib.pyplot as plt
-import seaborn as sns
-import concurrent.futures
-import threading
+from sklearn.preprocessing import StandardScaler
 from tqdm import tqdm
-import pickle
+
 import preprocess_data
-import os
 from anomaly_visualizer import AnomalyVisualizer
-from sklearn.cluster import KMeans
+from user_profiling import UserProfiler
+
 
 class IsolationForestModel:
+    """
+    A class for anomaly detection using Isolation Forest algorithm.
+
+    This class implements user-specific Isolation Forest models for detecting anomalies
+    in user actions based on various features.
+    """
+
     def __init__(self, preprocessed_df, n_estimators=100, contamination=0.1, random_state=42, min_samples=2,
                  max_workers=None, save_models=True, overwrite_models=False, save_evaluations=True,
                  overwrite_evaluations=False):
+        """
+        Initialize the IsolationForestModel with given parameters.
+
+        Args:
+            preprocessed_df (pandas.DataFrame): Preprocessed dataframe containing user actions.
+            n_estimators (int): Number of estimators for Isolation Forest.
+            contamination (float): The amount of contamination of the data set, i.e. the proportion of outliers.
+            random_state (int): Random state for reproducibility.
+            min_samples (int): Minimum number of samples required to train a model for a user.
+            max_workers (int): Maximum number of worker threads for parallel processing.
+            save_models (bool): Whether to save trained models to disk.
+            overwrite_models (bool): Whether to overwrite existing saved models.
+            save_evaluations (bool): Whether to save model evaluations to disk.
+            overwrite_evaluations (bool): Whether to overwrite existing saved evaluations.
+        """
         self.profiler = UserProfiler(preprocessed_df)
         self.user_models = {}
         self.user_scalers = {}
@@ -52,6 +76,15 @@ class IsolationForestModel:
         self.random_state = random_state
 
     def train_user_model(self, user_id):
+        """
+        Train Isolation Forest models for a specific user.
+
+        This method trains separate Isolation Forest models for each feature
+        of the user's data.
+
+        Args:
+            user_id (str): The ID of the user to train the model for.
+        """
         user_data = self.profiler.df[self.profiler.df['user_id'] == user_id]
 
         if len(user_data) < self.min_samples:
@@ -92,11 +125,22 @@ class IsolationForestModel:
             self.save_user_model(user_id)
 
     def train_all_users(self):
+        """
+        Train models for all users in parallel.
+
+        This method uses a ThreadPoolExecutor to train models for all users concurrently.
+        """
         user_ids = list(self.profiler.df['user_id'].unique())
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             list(tqdm(executor.map(self.train_user_model, user_ids), total=len(user_ids), desc="Training users"))
 
     def save_user_model(self, user_id):
+        """
+        Save a trained user model to disk.
+
+        Args:
+            user_id (str): The ID of the user whose model is to be saved.
+        """
         if not os.path.exists('isolation_forest_trained_models'):
             os.makedirs('isolation_forest_trained_models')
 
@@ -115,6 +159,15 @@ class IsolationForestModel:
             }, f)
 
     def load_user_model(self, user_id):
+        """
+        Load a trained user model from disk.
+
+        Args:
+            user_id (str): The ID of the user whose model is to be loaded.
+
+        Returns:
+            bool: True if the model was successfully loaded, False otherwise.
+        """
         model_path = f'isolation_forest_trained_models/{user_id}_model.pkl'
         if os.path.exists(model_path):
             try:
@@ -132,6 +185,12 @@ class IsolationForestModel:
         return False
 
     def train_or_load_all_users(self):
+        """
+        Train or load models for all users.
+
+        This method attempts to load pre-trained models for each user.
+        If a model doesn't exist or can't be loaded, it trains a new model.
+        """
         user_ids = list(self.profiler.df['user_id'].unique())
         for user_id in tqdm(user_ids, desc="Training/Loading users"):
             if not self.overwrite_models and self.load_user_model(user_id):
@@ -139,6 +198,18 @@ class IsolationForestModel:
             self.train_user_model(user_id)
 
     def predict_user_action(self, user_id, action_features, threshold_inbetween=-0.2, threshold_invalid=-0.5):
+        """
+        Predict whether a user action is valid, needs a second check, or is invalid.
+
+        Args:
+            user_id (str): The ID of the user.
+            action_features (dict): A dictionary of feature values for the action.
+            threshold_inbetween (float): Threshold for "need_second_check" category.
+            threshold_invalid (float): Threshold for "invalid" category.
+
+        Returns:
+            str: Prediction result ("valid", "need_second_check", or "invalid").
+        """
         if user_id not in self.user_models:
             raise ValueError(f"No model found for user_id: {user_id}")
 
@@ -170,6 +241,17 @@ class IsolationForestModel:
         return self.aggregate_scores(iforest_scores, threshold_inbetween, threshold_invalid)
 
     def calculate_profile_weight(self, user_id, feature, value):
+        """
+        Calculate the weight of a feature value based on the user's profile.
+
+        Args:
+            user_id (str): The ID of the user.
+            feature (str): The feature name.
+            value: The feature value.
+
+        Returns:
+            float: The calculated weight.
+        """
         profile = self.profiler.create_user_profile(user_id)
         if feature in profile:
             profile_value = profile[feature]
@@ -178,6 +260,17 @@ class IsolationForestModel:
         return 1.0
 
     def aggregate_scores(self, iforest_scores, threshold_inbetween, threshold_invalid):
+        """
+        Aggregate individual feature scores to determine the final prediction.
+
+        Args:
+            iforest_scores (list): List of tuples containing feature names and their scores.
+            threshold_inbetween (float): Threshold for "need_second_check" category.
+            threshold_invalid (float): Threshold for "invalid" category.
+
+        Returns:
+            str: Aggregated prediction result.
+        """
         total_weighted_score = sum(score for _, score in iforest_scores)
 
         if total_weighted_score <= threshold_invalid:
@@ -188,6 +281,13 @@ class IsolationForestModel:
             return "valid"
 
     def save_evaluation(self, user_id, evaluation_result):
+        """
+        Save the evaluation result for a user to disk.
+
+        Args:
+            user_id (str): The ID of the user.
+            evaluation_result (tuple): The evaluation result to be saved.
+        """
         if not os.path.exists('isolation_forest_evaluations'):
             os.makedirs('isolation_forest_evaluations')
 
@@ -201,6 +301,15 @@ class IsolationForestModel:
             pickle.dump(evaluation_result, f)
 
     def load_evaluation(self, user_id):
+        """
+        Load the evaluation result for a user from disk.
+
+        Args:
+            user_id (str): The ID of the user.
+
+        Returns:
+            tuple or None: The loaded evaluation result, or None if not found.
+        """
         eval_path = f'isolation_forest_evaluations/{user_id}_evaluation.pkl'
         if os.path.exists(eval_path):
             with open(eval_path, 'rb') as f:
@@ -208,6 +317,13 @@ class IsolationForestModel:
         return None
 
     def evaluate_model(self):
+        """
+        Evaluate the model for all users and display the results.
+
+        This method analyzes the actions of all users, categorizes them,
+        and provides a summary of the results. It also displays random samples
+        of anomalous users for further inspection.
+        """
         results = {"valid": 0, "need_second_check": 0, "invalid": 0}
         user_results = {}
         all_user_data = []
@@ -253,6 +369,17 @@ class IsolationForestModel:
         self.display_random_anomalies(user_results, user_profiles, all_user_data)
 
     def display_random_anomalies(self, user_results, user_profiles, user_data):
+        """
+        Display random samples of users with anomalous actions.
+
+        This method selects random users from the 'need_second_check' and 'invalid'
+        categories and displays their profiles and anomalous actions.
+
+        Args:
+            user_results (dict): Dictionary containing results for each user.
+            user_profiles (dict): Dictionary containing user profiles.
+            user_data (pandas.DataFrame): DataFrame containing all user data.
+        """
         need_second_check_users = [user for user, results in user_results.items() if results['need_second_check'] > 0]
         invalid_users = [user for user, results in user_results.items() if results['invalid'] > 0]
 
@@ -283,6 +410,15 @@ class IsolationForestModel:
                                                           "Random Users Sample"))
 
     def visualize_anomalies(self, user_id):
+        """
+        Visualize anomalies for a specific user.
+
+        This method creates visualizations of various aspects of a user's data,
+        including feature distributions and anomalies.
+
+        Args:
+            user_id (str): The ID of the user to visualize anomalies for.
+        """
         if user_id not in self.user_models:
             print(f"No model found for user {user_id}")
             return
@@ -294,10 +430,16 @@ class IsolationForestModel:
         """
         Analyze user patterns using k-means clustering and visualize the distribution.
 
-        :param user_id: ID of the user to analyze
-        :param feature: 'hour_of_timestamp' or 'session_duration'
-        :param n_clusters: Number of clusters to use in k-means
-        :return: Tuple containing cluster centers, potential anomalies, and silhouette score
+        This method applies k-means clustering to a specific feature of a user's data,
+        identifies potential anomalies, and visualizes the results.
+
+        Args:
+            user_id (str): ID of the user to analyze.
+            feature (str): The feature to analyze ('hour_of_timestamp' or 'session_duration').
+            n_clusters (int): Number of clusters to use in k-means.
+
+        Returns:
+            tuple: Containing cluster centers, potential anomalies, and silhouette score.
         """
         # Suppress specific warnings
         warnings.filterwarnings("ignore", message="Blended transforms not yet supported.")
@@ -361,6 +503,19 @@ class IsolationForestModel:
         return centers, anomalies, silhouette_avg
 
     def analyze_user(self, user_id, print_results=False):
+        """
+        Analyze a specific user's data and identify anomalies.
+
+        This method applies the trained model to a user's data, categorizes actions,
+        and optionally prints and visualizes the results.
+
+        Args:
+            user_id (str): The ID of the user to analyze.
+            print_results (bool): Whether to print and visualize the results.
+
+        Returns:
+            tuple: Containing user_data, normal_data, and anomalous_data DataFrames.
+        """
         if user_id not in self.user_models:
             print(f"No model found for user {user_id}")
             return
@@ -395,7 +550,6 @@ class IsolationForestModel:
             # Add k-means analysis
             self.analyze_user_patterns_with_kmeans(user_id, 'hour_of_timestamp')
             self.analyze_user_patterns_with_kmeans(user_id, 'session_duration')
-
 
         return user_data, normal_data, anomalous_data
 
