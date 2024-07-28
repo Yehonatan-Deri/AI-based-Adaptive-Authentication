@@ -3,6 +3,7 @@ import warnings
 import pandas as pd
 import numpy as np
 from sklearn.ensemble import IsolationForest
+from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 from user_profiling import UserProfiler
@@ -36,11 +37,11 @@ class IsolationForestModel:
         self.features = ['hour_of_timestamp', 'phone_versions', 'iOS sum', 'Android sum', 'is_denied',
                          'session_duration', 'location_or_ip']
         self.feature_weights = {
-            'hour_of_timestamp': 0.2,
+            'hour_of_timestamp': 0.3,
             'phone_versions': 0.2,
             'iOS sum': 0.1,
             'Android sum': 0.1,
-            'is_denied': 0.2,
+            'is_denied': 0.4,
             'session_duration': 0.2,
             'location_or_ip': 0.3
         }
@@ -296,6 +297,7 @@ class IsolationForestModel:
         :param user_id: ID of the user to analyze
         :param feature: 'hour_of_timestamp' or 'session_duration'
         :param n_clusters: Number of clusters to use in k-means
+        :return: Tuple containing cluster centers, potential anomalies, and silhouette score
         """
         # Suppress specific warnings
         warnings.filterwarnings("ignore", message="Blended transforms not yet supported.")
@@ -309,6 +311,9 @@ class IsolationForestModel:
         kmeans = KMeans(n_clusters=n_clusters, random_state=42)
         labels = kmeans.fit_predict(X)
         centers = kmeans.cluster_centers_.flatten()
+
+        # Calculate silhouette score
+        silhouette_avg = silhouette_score(X, labels)
 
         # Create the plot
         plt.figure(figsize=(12, 6))
@@ -347,11 +352,13 @@ class IsolationForestModel:
         plt.tight_layout()
         plt.show()
 
-        # Print information about potential anomalies
+        # Print information about potential anomalies and silhouette score
         print(f"Potential anomalies for {feature}:")
-        print(anomalies.flatten())
+        print(f"Silhouette Score: {silhouette_avg:.4f}")
+        clustering_quality_percentage = silhouette_avg * 100
+        print(f"Clustering quality: {clustering_quality_percentage:.2f}%")
 
-        return centers, anomalies
+        return centers, anomalies, silhouette_avg
 
     def analyze_user(self, user_id, print_results=False):
         if user_id not in self.user_models:
@@ -402,7 +409,7 @@ if __name__ == "__main__":
     iforest_model.train_or_load_all_users()
 
     # Example usage
-    example_user_id = 'fa60efb5-340d-4160-9a67-f864f74ff0b5'
+    example_user_id = '095ffcae-011c-4b6d-a5a3-5eea7368806f'
     example_action_features = {
         'hour_of_timestamp': 15,
         'phone_versions': 'iPhone14_5',

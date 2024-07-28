@@ -495,7 +495,6 @@ class LOFModel:
 
         # Print information about potential anomalies and silhouette score
         print(f"Potential anomalies for {feature}:")
-        print(anomalies.flatten())
         print(f"Silhouette Score: {silhouette_avg:.4f}")
         clustering_quality_percentage = silhouette_avg * 100
         print(f"Clustering quality: {clustering_quality_percentage:.2f}%")
