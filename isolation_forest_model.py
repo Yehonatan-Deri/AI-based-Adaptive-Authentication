@@ -352,7 +352,7 @@ class IsolationForestModel:
         plt.tight_layout()
         plt.show()
 
-        # Print information about potential anomalies and silhouette score
+        # Print information about silhouette score
         print(f"Potential anomalies for {feature}:")
         print(f"Silhouette Score: {silhouette_avg:.4f}")
         clustering_quality_percentage = silhouette_avg * 100
