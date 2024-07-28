@@ -1,22 +1,23 @@
+import concurrent.futures
+import os
+import pickle
+import threading
 import warnings
 
-import pandas as pd
+import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
+import seaborn as sns
+from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
+from sklearn.model_selection import train_test_split
 from sklearn.neighbors import LocalOutlierFactor
 from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import train_test_split
-from user_profiling import UserProfiler
-import matplotlib.pyplot as plt
-import seaborn as sns
-import concurrent.futures
-import threading
 from tqdm import tqdm
-import random
+
 from anomaly_visualizer import AnomalyVisualizer
-import pickle
-import os
-from sklearn.cluster import KMeans
+from user_profiling import UserProfiler
+
 
 class LOFModel:
     """
@@ -36,17 +37,9 @@ class LOFModel:
             min_samples (int): Minimum number of samples required to train a user model.
             max_workers (int): Maximum number of threads to use for parallel processing.
             save_models (bool): Whether to save trained models to disk.
-
-        Attributes:
-            profiler (UserProfiler): User profiling object.
-            user_models (dict): Stores LOF models for each user and feature.
-            user_scalers (dict): Stores scalers for each user and feature.
-            user_test_data (dict): Stores test data for each user.
-            categorical_columns (dict): Stores categorical column names for each user.
-            features (list): List of features used in the model.
-            feature_weights (dict): Weights assigned to each feature for anomaly scoring.
-            feature_thresholds (dict): Thresholds for each feature to determine anomalies.
-            save_models (bool): Whether to save trained models to disk.
+            overwrite_models (bool): Whether to overwrite existing saved models.
+            save_evaluations (bool): Whether to save model evaluations to disk.
+            overwrite_evaluations (bool): Whether to overwrite existing saved evaluations.
         """
         self.profiler = UserProfiler(preprocessed_df)
         self.user_models = {}
@@ -89,7 +82,6 @@ class LOFModel:
         user_data = self.profiler.df[self.profiler.df['user_id'] == user_id]
 
         if len(user_data) < self.min_samples:
-            # print(f"\nInsufficient data for user {user_id}. Skipping.") # Skip users with insufficient data
             return
 
         user_models = {}
@@ -279,6 +271,13 @@ class LOFModel:
             return "valid"
 
     def save_evaluation(self, user_id, evaluation_result):
+        """
+        Save the evaluation result for a user to disk.
+
+        Args:
+            user_id (str): The ID of the user.
+            evaluation_result (tuple): The evaluation result to be saved.
+        """
         if not os.path.exists('lof_evaluations'):
             os.makedirs('lof_evaluations')
 
@@ -292,6 +291,15 @@ class LOFModel:
             pickle.dump(evaluation_result, f)
 
     def load_evaluation(self, user_id):
+        """
+        Load the evaluation result for a user from disk.
+
+        Args:
+            user_id (str): The ID of the user.
+
+        Returns:
+            tuple or None: The loaded evaluation result, or None if not found.
+        """
         eval_path = f'lof_evaluations/{user_id}_evaluation.pkl'
         if os.path.exists(eval_path):
             with open(eval_path, 'rb') as f:
@@ -358,6 +366,7 @@ class LOFModel:
 
         Returns:
             dict: A dictionary containing counts of valid, need_second_check, and invalid predictions.
+            pd.DataFrame: The test data with predictions added.
         """
         user_results = {"valid": 0, "need_second_check": 0, "invalid": 0}
         test_data = self.user_test_data[user_id].copy()
@@ -385,6 +394,8 @@ class LOFModel:
 
         Args:
             user_results (dict): Dictionary containing evaluation results for each user.
+            user_profiles (dict): Dictionary containing user profiles.
+            user_data (pd.DataFrame): DataFrame containing all user data.
         """
         need_second_check_users = [user for user, results in user_results.items() if results['need_second_check'] > 0]
         invalid_users = [user for user, results in user_results.items() if results['invalid'] > 0]
@@ -421,6 +432,8 @@ class LOFModel:
         """
         Visualize anomalies for a specific user.
 
+        This method creates visualizations of the user's data, highlighting anomalies.
+
         Args:
             user_id (str): The ID of the user to visualize anomalies for.
         """
@@ -435,10 +448,16 @@ class LOFModel:
         """
         Analyze user patterns using k-means clustering and visualize the distribution.
 
-        :param user_id: ID of the user to analyze
-        :param feature: 'hour_of_timestamp' or 'session_duration'
-        :param n_clusters: Number of clusters to use in k-means
-        :return: Tuple containing cluster centers, potential anomalies, and silhouette score
+        This method applies k-means clustering to a specific feature of a user's data,
+        identifies potential anomalies, and visualizes the results.
+
+        Args:
+            user_id (str): ID of the user to analyze.
+            feature (str): The feature to analyze ('hour_of_timestamp' or 'session_duration').
+            n_clusters (int): Number of clusters to use in k-means.
+
+        Returns:
+            tuple: Containing cluster centers, potential anomalies, and silhouette score.
         """
         # Suppress specific warnings
         warnings.filterwarnings("ignore", message="Blended transforms not yet supported.")
@@ -505,11 +524,15 @@ class LOFModel:
         """
         Perform a comprehensive analysis of a user's behavior and anomalies.
 
-        This method visualizes the user's data, predicts anomalies, compares normal and anomalous data,
-        visualizes categorical features, and prints statistics about the user's actions and anomalies.
+        This method applies the trained model to a user's data, categorizes actions,
+        and optionally prints and visualizes the results.
 
         Args:
             user_id (str): The ID of the user to analyze.
+            print_results (bool): Whether to print and visualize the results.
+
+        Returns:
+            tuple: Containing user_data, normal_data, and anomalous_data DataFrames.
         """
         if user_id not in self.user_models:
             print(f"No model found for user {user_id}")
