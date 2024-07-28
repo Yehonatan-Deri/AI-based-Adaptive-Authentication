@@ -173,7 +173,6 @@ class OCSVMModel:
                     self.user_scalers[user_id] = data['scalers']
                     self.categorical_columns[user_id] = data['categorical_columns']
                     self.user_test_data[user_id] = data['test_data']
-                # print(f"Loaded model for user {user_id}") todo delete print
                 return True
             except Exception as e:
                 print(f"Error loading model for user {user_id}: {e}")
