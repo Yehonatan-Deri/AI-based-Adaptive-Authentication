@@ -1,4 +1,3 @@
-
 import glob
 import os
 import pickle
@@ -17,7 +16,23 @@ from ocsvm_model import OCSVMModel
 
 
 class ModelComparator:
+    """
+    A class for comparing different anomaly detection models.
+
+    This class provides methods to load evaluation results, calculate performance metrics,
+    and compare different aspects of the models such as overall performance, feature importance,
+    and user consistency.
+    """
+
     def __init__(self, lof_model, iforest_model, ocsvm_model):
+        """
+        Initialize the ModelComparator with different anomaly detection models.
+
+        Args:
+            lof_model (LOFModel): Local Outlier Factor model
+            iforest_model (IsolationForestModel): Isolation Forest model
+            ocsvm_model (OCSVMModel): One-Class SVM model
+        """
         self.models = {
             'LOF': lof_model,
             'Isolation Forest': iforest_model,
@@ -27,6 +42,13 @@ class ModelComparator:
         self.performance_metrics = {}
 
     def load_evaluations(self):
+        """
+        Load evaluation results for each model from pickle files.
+
+        This method searches for evaluation files in model-specific directories,
+        loads the data, and stores it in the evaluation_results dictionary.
+        It also checks for missing users across different models.
+        """
         for model_name, model in self.models.items():
             self.evaluation_results[model_name] = {}
             eval_dir = f'{model_name.lower().replace(" ", "_")}_evaluations'
@@ -51,7 +73,7 @@ class ModelComparator:
             else:
                 print(f"Warning: Evaluation directory not found for {model_name}: {eval_dir}")
 
-        # Print summary of loaded evaluations
+        # Print summary and check for missing users
         print("\nSummary of loaded evaluations:")
         for model_name, evaluations in self.evaluation_results.items():
             print(f"{model_name}: {len(evaluations)} users")
@@ -69,6 +91,12 @@ class ModelComparator:
                 print(f"User {user_id} is missing from: {', '.join(missing_models)}")
 
     def calculate_performance_metrics(self):
+        """
+        Calculate performance metrics for each model.
+
+        This method computes confusion matrices and classification reports for each model
+        based on the loaded evaluation results. The metrics are stored in the performance_metrics dictionary.
+        """
         for model_name, evaluations in self.evaluation_results.items():
             true_labels = []
             predicted_labels = []
@@ -110,6 +138,12 @@ class ModelComparator:
                 }
 
     def compare_overall_performance(self):
+        """
+        Compare and print the overall performance of each model.
+
+        This method prints accuracy, precision, recall, and F1-score for anomaly detection
+        for each model based on the calculated performance metrics.
+        """
         print("Overall Performance Comparison:")
         for model_name, metrics in self.performance_metrics.items():
             print(f"\n{model_name}:")
@@ -121,7 +155,14 @@ class ModelComparator:
                 print(f"Precision (Anomaly): {cr['anomaly']['precision']:.4f}")
                 print(f"Recall (Anomaly): {cr['anomaly']['recall']:.4f}")
                 print(f"F1-score (Anomaly): {cr['anomaly']['f1-score']:.4f}")
+
     def compare_feature_importance(self):
+        """
+        Compare and visualize the feature importance across different models.
+
+        This method creates a bar plot showing the importance of each feature
+        for each model based on the feature weights defined in the models.
+        """
         feature_importance = {model_name: {feature: 0 for feature in self.models[model_name].features}
                               for model_name in self.models.keys()}
 
@@ -139,6 +180,16 @@ class ModelComparator:
         plt.show()
 
     def compare_user_consistency(self):
+        """
+        Compare the consistency of predictions across different models for each user.
+
+        This method calculates a consistency score for each user based on how often
+        the models agree on their predictions. It also generates a histogram of
+        consistency scores across all users.
+
+        Returns:
+            dict: A dictionary of user consistency scores.
+        """
         user_consistency = {}
         all_user_ids = set()
         for model_results in self.evaluation_results.values():
@@ -181,6 +232,16 @@ class ModelComparator:
         return user_consistency
 
     def identify_challenging_cases(self):
+        """
+        Identify cases where the models disagree on their predictions.
+
+        This method finds instances where the different models give conflicting
+        predictions for the same user action.
+
+        Returns:
+            dict: A dictionary of challenging cases, where keys are user IDs and
+                  values are lists of indices where models disagree.
+        """
         challenging_cases = {}
         all_user_ids = set()
         for model_results in self.evaluation_results.values():
@@ -209,6 +270,13 @@ class ModelComparator:
         return challenging_cases
 
     def plot_precision_recall_curves_with_kmeans(self):
+        """
+        Plot precision-recall curves for each model and apply K-means clustering.
+
+        This method generates precision-recall curves for each model and applies
+        K-means clustering to identify distinct regions in the curves. The results
+        are visualized in a single plot for easy comparison.
+        """
         plt.figure(figsize=(12, 10))
 
         # Use a list of colors instead of get_cmap
@@ -239,7 +307,7 @@ class ModelComparator:
             # Apply K-means clustering
             points = np.column_stack((recall, precision))
             kmeans = KMeans(n_clusters=2, random_state=42)
-            cluster_labels = kmeans.fit_predict(points)
+            # cluster_labels = kmeans.fit_predict(points)
 
             # # Plot both clusters
             # for i in range(2):  # Changed from range(1) to range(2)
@@ -255,6 +323,16 @@ class ModelComparator:
         plt.show()
 
     def run_comparison(self):
+        """
+        Run the full comparison pipeline.
+
+        This method executes all comparison steps in sequence, including loading evaluations,
+        calculating performance metrics, comparing overall performance, feature importance,
+        user consistency, and identifying challenging cases.
+
+        Returns:
+            tuple: A tuple containing user consistency scores and challenging cases.
+        """
         print("Loading evaluations...")
         self.load_evaluations()
 
@@ -277,6 +355,12 @@ class ModelComparator:
         return user_consistency, challenging_cases
 
     def run_enhanced_comparison(self):
+        """
+        Run enhanced comparison methods.
+
+        This method executes additional comparison techniques, such as
+        plotting precision-recall curves with K-means clustering.
+        """
         comparison_methods = [
             ("Comparing precision-recall curves with K-means", self.plot_precision_recall_curves_with_kmeans),
         ]
