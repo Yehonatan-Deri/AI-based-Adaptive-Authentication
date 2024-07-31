@@ -1,18 +1,22 @@
-import pandas as pd
+import concurrent.futures
+import os
+import pickle
+import threading
+import warnings
+
+import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
+import seaborn as sns
+from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_score
+from sklearn.model_selection import train_test_split
 from sklearn.neighbors import LocalOutlierFactor
 from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import train_test_split
-from user_profiling import UserProfiler
-import matplotlib.pyplot as plt
-import seaborn as sns
-import concurrent.futures
-import threading
 from tqdm import tqdm
-import random
+
 from anomaly_visualizer import AnomalyVisualizer
-import pickle
-import os
+from user_profiling import UserProfiler
 
 
 class LOFModel:
@@ -23,8 +27,8 @@ class LOFModel:
     for each user and provides methods for prediction and evaluation.
     """
 
-    def __init__(self, preprocessed_df, min_samples=5, max_workers=None, save_models=False,
-                 overwrite_models=False, save_evaluations=False, overwrite_evaluations=False):
+    def __init__(self, preprocessed_df, min_samples=2, max_workers=None, save_models=True,
+                 overwrite_models=False, save_evaluations=True, overwrite_evaluations=False):
         """
         Initialize the LOF model.
 
@@ -33,17 +37,9 @@ class LOFModel:
             min_samples (int): Minimum number of samples required to train a user model.
             max_workers (int): Maximum number of threads to use for parallel processing.
             save_models (bool): Whether to save trained models to disk.
-
-        Attributes:
-            profiler (UserProfiler): User profiling object.
-            user_models (dict): Stores LOF models for each user and feature.
-            user_scalers (dict): Stores scalers for each user and feature.
-            user_test_data (dict): Stores test data for each user.
-            categorical_columns (dict): Stores categorical column names for each user.
-            features (list): List of features used in the model.
-            feature_weights (dict): Weights assigned to each feature for anomaly scoring.
-            feature_thresholds (dict): Thresholds for each feature to determine anomalies.
-            save_models (bool): Whether to save trained models to disk.
+            overwrite_models (bool): Whether to overwrite existing saved models.
+            save_evaluations (bool): Whether to save model evaluations to disk.
+            overwrite_evaluations (bool): Whether to overwrite existing saved evaluations.
         """
         self.profiler = UserProfiler(preprocessed_df)
         self.user_models = {}
@@ -86,7 +82,6 @@ class LOFModel:
         user_data = self.profiler.df[self.profiler.df['user_id'] == user_id]
 
         if len(user_data) < self.min_samples:
-            # print(f"\nInsufficient data for user {user_id}. Skipping.") # Skip users with insufficient data
             return
 
         user_models = {}
@@ -276,6 +271,13 @@ class LOFModel:
             return "valid"
 
     def save_evaluation(self, user_id, evaluation_result):
+        """
+        Save the evaluation result for a user to disk.
+
+        Args:
+            user_id (str): The ID of the user.
+            evaluation_result (tuple): The evaluation result to be saved.
+        """
         if not os.path.exists('lof_evaluations'):
             os.makedirs('lof_evaluations')
 
@@ -289,6 +291,15 @@ class LOFModel:
             pickle.dump(evaluation_result, f)
 
     def load_evaluation(self, user_id):
+        """
+        Load the evaluation result for a user from disk.
+
+        Args:
+            user_id (str): The ID of the user.
+
+        Returns:
+            tuple or None: The loaded evaluation result, or None if not found.
+        """
         eval_path = f'lof_evaluations/{user_id}_evaluation.pkl'
         if os.path.exists(eval_path):
             with open(eval_path, 'rb') as f:
@@ -355,6 +366,7 @@ class LOFModel:
 
         Returns:
             dict: A dictionary containing counts of valid, need_second_check, and invalid predictions.
+            pd.DataFrame: The test data with predictions added.
         """
         user_results = {"valid": 0, "need_second_check": 0, "invalid": 0}
         test_data = self.user_test_data[user_id].copy()
@@ -382,6 +394,8 @@ class LOFModel:
 
         Args:
             user_results (dict): Dictionary containing evaluation results for each user.
+            user_profiles (dict): Dictionary containing user profiles.
+            user_data (pd.DataFrame): DataFrame containing all user data.
         """
         need_second_check_users = [user for user, results in user_results.items() if results['need_second_check'] > 0]
         invalid_users = [user for user, results in user_results.items() if results['invalid'] > 0]
@@ -418,6 +432,8 @@ class LOFModel:
         """
         Visualize anomalies for a specific user.
 
+        This method creates visualizations of the user's data, highlighting anomalies.
+
         Args:
             user_id (str): The ID of the user to visualize anomalies for.
         """
@@ -428,15 +444,95 @@ class LOFModel:
         user_data = self.profiler.df[self.profiler.df['user_id'] == user_id]
         self.visualizer.visualize_user_anomalies(user_id, user_data, self.features)
 
+    def analyze_user_patterns_with_kmeans(self, user_id, feature, n_clusters=2):
+        """
+        Analyze user patterns using k-means clustering and visualize the distribution.
+
+        This method applies k-means clustering to a specific feature of a user's data,
+        identifies potential anomalies, and visualizes the results.
+
+        Args:
+            user_id (str): ID of the user to analyze.
+            feature (str): The feature to analyze ('hour_of_timestamp' or 'session_duration').
+            n_clusters (int): Number of clusters to use in k-means.
+
+        Returns:
+            tuple: Containing cluster centers, potential anomalies, and silhouette score.
+        """
+        # Suppress specific warnings
+        warnings.filterwarnings("ignore", message="Blended transforms not yet supported.")
+
+        user_data = self.profiler.df[self.profiler.df['user_id'] == user_id]
+
+        # Extract the feature data
+        X = user_data[feature].values.reshape(-1, 1)
+
+        # Apply k-means clustering
+        kmeans = KMeans(n_clusters=n_clusters, random_state=42)
+        labels = kmeans.fit_predict(X)
+        centers = kmeans.cluster_centers_.flatten()
+
+        # Calculate silhouette score
+        silhouette_avg = silhouette_score(X, labels)
+
+        # Create the plot
+        plt.figure(figsize=(12, 6))
+
+        # Plot the distribution
+        sns.histplot(X, kde=True, color="blue", alpha=0.5)
+
+        # Plot the k-means centers
+        for center in centers:
+            plt.axvline(x=center, color='red', linestyle='--', label='Cluster Center')
+
+        # Identify potential anomalies
+        distances = np.min(np.abs(X - centers), axis=1)
+        threshold = np.percentile(distances, 95)  # Using 95th percentile as threshold
+        anomalies = X[distances > threshold]
+
+        # Plot potential anomalies
+        plt.scatter(anomalies, np.zeros_like(anomalies), color='green', s=100, label='Potential Anomalies', zorder=5)
+
+        # Customize the plot
+        plt.title(f"Distribution of {feature} for User {user_id} with K-means Analysis")
+        plt.xlabel(feature)
+        plt.ylabel("Density")
+
+        # Add text annotations for cluster centers
+        y_max = plt.gca().get_ylim()[1]
+        for i, center in enumerate(centers):
+            plt.text(center, y_max * 0.95, f'Center {i + 1}: {center:.2f}',
+                     horizontalalignment='center', verticalalignment='top', rotation=90)
+
+        # Remove duplicate labels
+        handles, labels = plt.gca().get_legend_handles_labels()
+        by_label = dict(zip(labels, handles))
+        plt.legend(by_label.values(), by_label.keys())
+
+        plt.tight_layout()
+        plt.show()
+
+        # Print information about potential anomalies and silhouette score
+        print(f"Potential anomalies for {feature}:")
+        print(f"Silhouette Score: {silhouette_avg:.4f}")
+        clustering_quality_percentage = silhouette_avg * 100
+        print(f"Clustering quality: {clustering_quality_percentage:.2f}%")
+
+        return centers, anomalies, silhouette_avg
+
     def analyze_user(self, user_id, print_results=False):
         """
         Perform a comprehensive analysis of a user's behavior and anomalies.
 
-        This method visualizes the user's data, predicts anomalies, compares normal and anomalous data,
-        visualizes categorical features, and prints statistics about the user's actions and anomalies.
+        This method applies the trained model to a user's data, categorizes actions,
+        and optionally prints and visualizes the results.
 
         Args:
             user_id (str): The ID of the user to analyze.
+            print_results (bool): Whether to print and visualize the results.
+
+        Returns:
+            tuple: Containing user_data, normal_data, and anomalous_data DataFrames.
         """
         if user_id not in self.user_models:
             print(f"No model found for user {user_id}")
@@ -472,6 +568,10 @@ class LOFModel:
 
             # Visualize feature distributions
             self.visualizer.visualize_feature_distributions(user_id, user_data)
+
+            # Add k-means analysis
+            self.analyze_user_patterns_with_kmeans(user_id, 'hour_of_timestamp')
+            self.analyze_user_patterns_with_kmeans(user_id, 'session_duration')
 
         return user_data, normal_data, anomalous_data
 

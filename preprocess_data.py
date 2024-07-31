@@ -2,17 +2,38 @@
 # Description: This module is responsible for preprocessing the raw log data.
 import re
 
-import pandas as pd
 import numpy as np
-from datetime import datetime
+import pandas as pd
 
 
 class Preprocessor:
+    """
+    A class for preprocessing raw log data from a CSV file.
+
+    This class handles various preprocessing steps including data loading,
+    parsing, cleaning, and feature extraction.
+    """
+
     def __init__(self, file_path):
+        """
+        Initialize the Preprocessor with the path to the CSV file.
+
+        Args:
+            file_path (str): The path to the CSV file containing the raw log data.
+        """
         self.file_path = file_path
         self.df = None
 
     def load_data(self):
+        """
+        Load the CSV file into a pandas DataFrame and perform initial preprocessing.
+
+        This method reads the CSV file, converts the timestamp to datetime format,
+        removes rows containing "I <query>" in the message, and resets the index.
+
+        Returns:
+            pandas.DataFrame: The loaded and initially preprocessed DataFrame.
+        """
         self.df = pd.read_csv(self.file_path)
         self.df['@timestamp'] = pd.to_datetime(self.df['@timestamp'].str.replace('@', '').str.strip(),
                                                format='%b %d, %Y %H:%M:%S.%f')
@@ -23,6 +44,12 @@ class Preprocessor:
         return self.df
 
     def parse_message(self):
+        """
+        Parse the 'message' column to extract additional features.
+
+        This method extracts the auth_id, determines if the message is denied or approved,
+        and identifies the log type (start/finish) from the message content.
+        """
         self.df['auth_id'] = self.df['message'].str.extract(r'auth\s+([A-Za-z0-9]+)')
         self.df['is_denied'] = self.df['message'].str.contains('denied', case=False, na=False)
         self.df['is_approved'] = self.df['message'].str.contains('approved', case=False, na=False)
@@ -33,7 +60,12 @@ class Preprocessor:
                                                 'finish', np.nan))
 
     def fill_missing_values(self):
-        # Fill missing user_id in finish actions by matching start actions based on auth_id
+        """
+        Fill missing user_id values in finish actions.
+
+        This method matches start actions based on auth_id to fill in missing user_id values
+        in finish actions.
+        """
         start_actions = self.df[self.df['log_type'] == 'start'][['auth_id', 'user_id']]
 
         # Remove duplicates before merging
@@ -44,7 +76,12 @@ class Preprocessor:
         self.df.drop(columns=['user_id_start'], inplace=True)
 
     def remove_incomplete_sessions(self):
-        # Find start messages with no corresponding finish messages
+        """
+        Remove incomplete sessions from the DataFrame.
+
+        This method identifies and removes start messages with no corresponding finish messages,
+        finish messages with no corresponding start messages, and sessions with more than two pairs.
+        """
         auth_ids_with_finish = set(self.df[self.df['log_type'] == 'finish']['auth_id'].unique())
         auth_ids_with_start = set(self.df[self.df['log_type'] == 'start']['auth_id'].unique())
 
@@ -66,10 +103,21 @@ class Preprocessor:
         self.df = self.df[~self.df['auth_id'].isin(more_than_two_pairs)]
 
     def drop_unwanted_columns(self):
+        """
+        Drop unnecessary columns from the DataFrame.
+
+        This method keeps only the specified columns and removes the rest.
+        """
         columns_to_keep = ['@timestamp', 'Android sum', 'auth_id', 'iOS sum', 'log_type', 'message', 'user_id']
         self.df = self.df[columns_to_keep]
 
     def extract_location_or_ip(self):
+        """
+        Extract location or IP information from the message column.
+
+        This method uses regular expressions to extract location or IP information
+        from the message and adds it as a new column 'location_or_ip'.
+        """
         ip_pattern = re.compile(r'ip: (null|\d{1,3}(?:\.\d{1,3}){3})')
         location_pattern = re.compile(r'at (.*? \(\d{1,3}(?:\.\d{1,3}){3}\))')
 
@@ -83,12 +131,18 @@ class Preprocessor:
             ip_match = ip_pattern.search(message)
             if ip_match:
                 return f"ip: {ip_match.group(1)}"
-
             return None
 
         self.df['location_or_ip'] = self.df['message'].apply(extract_info)
 
     def extract_phone_type_and_version(self):
+        """
+        Extract phone type and version information from the message column.
+
+        This method identifies the phone type (iOS or Android) and extracts version
+        information. It also updates 'Android sum' and 'iOS sum' columns.
+        """
+
         def extract_info(message):
             if "iOS" in message:
                 return "iOS"
@@ -115,10 +169,21 @@ class Preprocessor:
         self.df['phone_versions'] = self.df['message'].apply(extract_versions)
 
     def extract_hour_of_timestamp(self):
+        """
+        Extract the hour from the timestamp column.
+
+        This method creates a new column 'hour_of_timestamp' containing
+        the hour extracted from the '@timestamp' column.
+        """
         self.df['hour_of_timestamp'] = self.df['@timestamp'].dt.hour
 
     def calculate_session_duration(self):
-        # Calculate session duration for each auth_id
+        """
+        Calculate the session duration for each auth_id.
+
+        This method computes the time difference between start and finish timestamps
+        for each auth_id and adds it as a new column 'session_duration'.
+        """
         start_times = self.df[self.df['log_type'] == 'start'][['auth_id', '@timestamp']].rename(
             columns={'@timestamp': 'start_time'})
         finish_times = self.df[self.df['log_type'] == 'finish'][['auth_id', '@timestamp']].rename(
@@ -138,17 +203,13 @@ class Preprocessor:
         # Keep session duration only for finish messages
         self.df.loc[self.df['log_type'] != 'finish', 'session_duration'] = np.nan
 
-    # def fix_missing_values(self):
-    #     for column in self.df.columns:
-    #         if self.df[column].dtype == 'bool':
-    #             self.df[column] = self.df[column].fillna(False)
-    #         elif self.df[column].dtype == 'object':
-    #             self.df[column] = self.df[column].fillna('')
-    #         else:
-    #             self.df[column] = self.df[column].fillna(0)
-
     def combine_start_finish(self):
-        # Extract start and finish rows
+        """
+        Combine start and finish rows into single rows.
+
+        This method merges start and finish rows based on auth_id and
+        combines relevant information from both rows into a single row.
+        """
         start_rows = self.df[self.df['log_type'] == 'start']
         finish_rows = self.df[self.df['log_type'] == 'finish']
 
@@ -173,7 +234,34 @@ class Preprocessor:
         self.df = combined_df[final_columns].copy()
         self.df.rename(columns={'user_id_start': 'user_id'}, inplace=True)
 
+    def calculate_approval_stats(self):
+        """
+        Calculate and print approval statistics.
+
+        This method computes the total number of entries, approved entries,
+        denied entries, and their respective percentages.
+        """
+        total_entries = len(self.df)
+        approved_count = self.df['is_approved'].sum()
+        denied_count = self.df['is_denied'].sum()
+
+        approved_percentage = (approved_count / total_entries) * 100
+        denied_percentage = (denied_count / total_entries) * 100
+
+        print(f"Total entries: {total_entries}")
+        print(f"Approved entries: {approved_count} ({approved_percentage:.2f}%)")
+        print(f"Denied entries: {denied_count} ({denied_percentage:.2f}%)")
+
     def preprocess(self):
+        """
+        Execute the full preprocessing pipeline.
+
+        This method calls all the preprocessing steps in the correct order
+        to fully process the raw log data.
+
+        Returns:
+            pandas.DataFrame: The fully preprocessed DataFrame.
+        """
         self.load_data()
         self.drop_unwanted_columns()
         self.parse_message()
@@ -184,13 +272,13 @@ class Preprocessor:
         self.calculate_session_duration()
         self.fill_missing_values()
         self.combine_start_finish()
-        # self.fix_missing_values()
+        # self.calculate_approval_stats()
         return self.df
 
 
 if __name__ == "__main__":
     """
-    main is for test purposes only
+    Main function for testing purposes.
     """
     file_path = 'csv_dir/jerusalem_location_15.csv'
     # file_path = r"C:\Users\John's PC\Desktop\logs_csv.csv"

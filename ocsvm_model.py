@@ -1,21 +1,49 @@
-import pandas as pd
-import numpy as np
-from sklearn.svm import OneClassSVM
-from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import train_test_split
-from user_profiling import UserProfiler
-import matplotlib.pyplot as plt
-import seaborn as sns
 import concurrent.futures
-import threading
-from tqdm import tqdm
-import pickle
 import os
+import pickle
+import threading
+import warnings
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import seaborn as sns
+from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_score
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.svm import OneClassSVM
+from tqdm import tqdm
+
 from anomaly_visualizer import AnomalyVisualizer
+from user_profiling import UserProfiler
+
 
 class OCSVMModel:
-    def __init__(self, preprocessed_df, kernel='rbf', nu=0.1, gamma='scale', min_samples=5, max_workers=None,
-                 save_models=False, overwrite_models=False, save_evaluations=False, overwrite_evaluations=False):
+    """
+    One-Class Support Vector Machine (OCSVM) model for anomaly detection.
+
+    This class implements a user-specific OCSVM model for detecting anomalies
+    in user actions based on various features.
+    """
+
+    def __init__(self, preprocessed_df, kernel='rbf', nu=0.1, gamma='scale', min_samples=2, max_workers=None,
+                 save_models=True, overwrite_models=False, save_evaluations=True, overwrite_evaluations=False):
+        """
+        Initialize the OCSVMModel.
+
+        Args:
+            preprocessed_df (pd.DataFrame): Preprocessed dataframe containing user data.
+            kernel (str): Kernel type to be used in the algorithm.
+            nu (float): An upper bound on the fraction of training errors and a lower bound of the fraction of support vectors.
+            gamma (str or float): Kernel coefficient for 'rbf', 'poly' and 'sigmoid'.
+            min_samples (int): Minimum number of samples required to train a model for a user.
+            max_workers (int): Maximum number of worker threads for parallel processing.
+            save_models (bool): Whether to save trained models to disk.
+            overwrite_models (bool): Whether to overwrite existing saved models.
+            save_evaluations (bool): Whether to save model evaluations to disk.
+            overwrite_evaluations (bool): Whether to overwrite existing saved evaluations.
+        """
         self.profiler = UserProfiler(preprocessed_df)
         self.user_models = {}
         self.user_scalers = {}
@@ -46,6 +74,14 @@ class OCSVMModel:
         self.gamma = gamma
 
     def train_user_model(self, user_id):
+        """
+        Train OCSVM models for a single user.
+
+        This method trains separate OCSVM models for each feature of a user's data.
+
+        Args:
+            user_id (str): The ID of the user to train models for.
+        """
         user_data = self.profiler.df[self.profiler.df['user_id'] == user_id]
 
         if len(user_data) < self.min_samples:
@@ -85,11 +121,22 @@ class OCSVMModel:
             self.save_user_model(user_id)
 
     def train_all_users(self):
+        """
+        Train OCSVM models for all users in parallel.
+
+        This method uses a ThreadPoolExecutor to train models for multiple users concurrently.
+        """
         user_ids = list(self.profiler.df['user_id'].unique())
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             list(tqdm(executor.map(self.train_user_model, user_ids), total=len(user_ids), desc="Training users"))
 
     def save_user_model(self, user_id):
+        """
+        Save a trained user model to disk.
+
+        Args:
+            user_id (str): The ID of the user whose model to save.
+        """
         if not os.path.exists('ocsvm_trained_models'):
             os.makedirs('ocsvm_trained_models')
 
@@ -108,6 +155,15 @@ class OCSVMModel:
             }, f)
 
     def load_user_model(self, user_id):
+        """
+        Load a trained user model from disk.
+
+        Args:
+            user_id (str): The ID of the user whose model to load.
+
+        Returns:
+            bool: True if the model was successfully loaded, False otherwise.
+        """
         model_path = f'ocsvm_trained_models/{user_id}_model.pkl'
         if os.path.exists(model_path):
             try:
@@ -117,7 +173,6 @@ class OCSVMModel:
                     self.user_scalers[user_id] = data['scalers']
                     self.categorical_columns[user_id] = data['categorical_columns']
                     self.user_test_data[user_id] = data['test_data']
-                # print(f"Loaded model for user {user_id}") todo delete print
                 return True
             except Exception as e:
                 print(f"Error loading model for user {user_id}: {e}")
@@ -125,6 +180,9 @@ class OCSVMModel:
         return False
 
     def train_or_load_all_users(self):
+        """
+        Train or load models for all users, depending on availability of saved models.
+        """
         user_ids = list(self.profiler.df['user_id'].unique())
         loaded_count = 0
         trained_count = 0
@@ -134,9 +192,20 @@ class OCSVMModel:
                 continue
             self.train_user_model(user_id)
             trained_count += 1
-        # print(f"Loaded {loaded_count} models, trained {trained_count} models")
-    # todo delete print
+
     def predict_user_action(self, user_id, action_features, threshold_inbetween=-0.2, threshold_invalid=-0.5):
+        """
+        Predict whether a user action is anomalous.
+
+        Args:
+            user_id (str): The ID of the user.
+            action_features (dict): A dictionary of feature names and their values for the action.
+            threshold_inbetween (float): The threshold for classifying an action as needing a second check.
+            threshold_invalid (float): The threshold for classifying an action as invalid.
+
+        Returns:
+            str: 'valid', 'need_second_check', or 'invalid'
+        """
         if user_id not in self.user_models:
             raise ValueError(f"No model found for user_id: {user_id}")
 
@@ -168,6 +237,17 @@ class OCSVMModel:
         return self.aggregate_scores(ocsvm_scores, threshold_inbetween, threshold_invalid)
 
     def calculate_profile_weight(self, user_id, feature, value):
+        """
+        Calculate a weight based on how much a feature value deviates from the user's profile.
+
+        Args:
+            user_id (str): The ID of the user.
+            feature (str): The name of the feature.
+            value: The value of the feature for the current action.
+
+        Returns:
+            float: A weight between 0 and 1, where 1 indicates no deviation from the profile.
+        """
         profile = self.profiler.create_user_profile(user_id)
         if feature in profile:
             profile_value = profile[feature]
@@ -176,6 +256,17 @@ class OCSVMModel:
         return 1.0
 
     def aggregate_scores(self, ocsvm_scores, threshold_inbetween, threshold_invalid):
+        """
+        Aggregate OCSVM scores for all features and classify the action.
+
+        Args:
+            ocsvm_scores (list): List of tuples containing (feature, score) pairs.
+            threshold_inbetween (float): Threshold for 'need_second_check' classification.
+            threshold_invalid (float): Threshold for 'invalid' classification.
+
+        Returns:
+            str: 'valid', 'need_second_check', or 'invalid'
+        """
         total_weighted_score = sum(score for _, score in ocsvm_scores)
 
         if total_weighted_score <= threshold_invalid:
@@ -186,6 +277,13 @@ class OCSVMModel:
             return "valid"
 
     def save_evaluation(self, user_id, evaluation_result):
+        """
+        Save the evaluation result for a user to disk.
+
+        Args:
+            user_id (str): The ID of the user.
+            evaluation_result (tuple): The evaluation result to be saved.
+        """
         if not os.path.exists('ocsvm_evaluations'):
             os.makedirs('ocsvm_evaluations')
 
@@ -199,6 +297,15 @@ class OCSVMModel:
             pickle.dump(evaluation_result, f)
 
     def load_evaluation(self, user_id):
+        """
+        Load the evaluation result for a user from disk.
+
+        Args:
+            user_id (str): The ID of the user.
+
+        Returns:
+            tuple or None: The loaded evaluation result, or None if not found.
+        """
         eval_path = f'ocsvm_evaluations/{user_id}_evaluation.pkl'
         if os.path.exists(eval_path):
             with open(eval_path, 'rb') as f:
@@ -206,6 +313,12 @@ class OCSVMModel:
         return None
 
     def evaluate_model(self):
+        """
+        Evaluate the model on test data for all users.
+
+        This method calculates the number of valid, need_second_check, and invalid predictions
+        across all users' test data. It also displays random anomalies for further inspection.
+        """
         results = {"valid": 0, "need_second_check": 0, "invalid": 0}
         user_results = {}
         all_user_data = []
@@ -251,6 +364,17 @@ class OCSVMModel:
         self.display_random_anomalies(user_results, user_profiles, all_user_data)
 
     def display_random_anomalies(self, user_results, user_profiles, user_data):
+        """
+        Display random anomalies from the 'need_second_check' and 'invalid' categories.
+
+        This method selects up to 3 random users from each category and displays their
+        profiles along with up to 3 random anomalous actions.
+
+        Args:
+            user_results (dict): Dictionary containing evaluation results for each user.
+            user_profiles (dict): Dictionary containing user profiles.
+            user_data (pd.DataFrame): DataFrame containing all user data.
+        """
         need_second_check_users = [user for user, results in user_results.items() if results['need_second_check'] > 0]
         invalid_users = [user for user, results in user_results.items() if results['invalid'] > 0]
 
@@ -281,6 +405,14 @@ class OCSVMModel:
                                                           "Random Users Sample"))
 
     def visualize_anomalies(self, user_id):
+        """
+        Visualize anomalies for a specific user.
+
+        This method creates visualizations of the user's data, highlighting anomalies.
+
+        Args:
+            user_id (str): The ID of the user to visualize anomalies for.
+        """
         if user_id not in self.user_models:
             print(f"No model found for user {user_id}")
             return
@@ -288,7 +420,96 @@ class OCSVMModel:
         user_data = self.profiler.df[self.profiler.df['user_id'] == user_id]
         self.visualizer.visualize_user_anomalies(user_id, user_data, self.features)
 
+    def analyze_user_patterns_with_kmeans(self, user_id, feature, n_clusters=2):
+        """
+        Analyze user patterns using k-means clustering and visualize the distribution.
+
+        This method applies k-means clustering to a specific feature of a user's data,
+        identifies potential anomalies, and visualizes the results.
+
+        Args:
+            user_id (str): ID of the user to analyze.
+            feature (str): The feature to analyze ('hour_of_timestamp' or 'session_duration').
+            n_clusters (int): Number of clusters to use in k-means.
+
+        Returns:
+            tuple: Containing cluster centers, potential anomalies, and silhouette score.
+        """
+        # Suppress specific warnings
+        warnings.filterwarnings("ignore", message="Blended transforms not yet supported.")
+
+        user_data = self.profiler.df[self.profiler.df['user_id'] == user_id]
+
+        # Extract the feature data
+        X = user_data[feature].values.reshape(-1, 1)
+
+        # Apply k-means clustering
+        kmeans = KMeans(n_clusters=n_clusters, random_state=42)
+        labels = kmeans.fit_predict(X)
+        centers = kmeans.cluster_centers_.flatten()
+
+        # Calculate silhouette score
+        silhouette_avg = silhouette_score(X, labels)
+
+        # Create the plot
+        plt.figure(figsize=(12, 6))
+
+        # Plot the distribution
+        sns.histplot(X, kde=True, color="blue", alpha=0.5)
+
+        # Plot the k-means centers
+        for center in centers:
+            plt.axvline(x=center, color='red', linestyle='--', label='Cluster Center')
+
+        # Identify potential anomalies
+        distances = np.min(np.abs(X - centers), axis=1)
+        threshold = np.percentile(distances, 95)  # Using 95th percentile as threshold
+        anomalies = X[distances > threshold]
+
+        # Plot potential anomalies
+        plt.scatter(anomalies, np.zeros_like(anomalies), color='green', s=100, label='Potential Anomalies', zorder=5)
+
+        # Customize the plot
+        plt.title(f"Distribution of {feature} for User {user_id} with K-means Analysis")
+        plt.xlabel(feature)
+        plt.ylabel("Density")
+
+        # Add text annotations for cluster centers
+        y_max = plt.gca().get_ylim()[1]
+        for i, center in enumerate(centers):
+            plt.text(center, y_max * 0.95, f'Center {i + 1}: {center:.2f}',
+                     horizontalalignment='center', verticalalignment='top', rotation=90)
+
+        # Remove duplicate labels
+        handles, labels = plt.gca().get_legend_handles_labels()
+        by_label = dict(zip(labels, handles))
+        plt.legend(by_label.values(), by_label.keys())
+
+        plt.tight_layout()
+        plt.show()
+
+        # Print information about silhouette score
+        print(f"Potential anomalies for {feature}:")
+        print(f"Silhouette Score: {silhouette_avg:.4f}")
+        clustering_quality_percentage = silhouette_avg * 100
+        print(f"Clustering quality: {clustering_quality_percentage:.2f}%")
+
+        return centers, anomalies, silhouette_avg
+
     def analyze_user(self, user_id, print_results=False):
+        """
+        Perform a comprehensive analysis of a user's behavior and anomalies.
+
+        This method applies the trained model to a user's data, categorizes actions,
+        and optionally prints and visualizes the results.
+
+        Args:
+            user_id (str): The ID of the user to analyze.
+            print_results (bool): Whether to print and visualize the results.
+
+        Returns:
+            tuple: Containing user_data, normal_data, and anomalous_data DataFrames.
+        """
         if user_id not in self.user_models:
             print(f"No model found for user {user_id}")
             return
@@ -320,7 +541,12 @@ class OCSVMModel:
 
             self.visualizer.visualize_feature_distributions(user_id, user_data)
 
+            # Add k-means analysis
+            self.analyze_user_patterns_with_kmeans(user_id, 'hour_of_timestamp')
+            self.analyze_user_patterns_with_kmeans(user_id, 'session_duration')
+
         return user_data, normal_data, anomalous_data
+
 
 if __name__ == "__main__":
     import preprocess_data
@@ -333,7 +559,7 @@ if __name__ == "__main__":
     ocsvm_model.train_or_load_all_users()
 
     # Example usage
-    example_user_id = 'aca17b2f-0840-4e47-a24a-66d47f9f16d7'
+    example_user_id = 'bf24d547-c834-4c06-a296-193991a9440c'
     example_action_features = {
         'hour_of_timestamp': 15,
         'phone_versions': 'iPhone14_5',

@@ -2,16 +2,40 @@
 # Description: This module is responsible for profiling users based on their behavior.
 
 import pandas as pd
+
 import preprocess_data
-import numpy as np
-from datetime import datetime
 
 
 class UserProfiler:
+    """
+    A class for profiling users based on their behavior data.
+
+    This class provides methods to analyze various aspects of user behavior,
+    including login times, device usage, session durations, and action denials.
+    """
+
     def __init__(self, preprocessed_df):
+        """
+        Initialize the UserProfiler with preprocessed data.
+
+        Args:
+            preprocessed_df (pd.DataFrame): A preprocessed DataFrame containing user behavior data.
+        """
         self.df = preprocessed_df
 
     def create_user_profile(self, user_id):
+        """
+        Create a comprehensive profile for a specific user.
+
+        Args:
+            user_id (str): The ID of the user to profile.
+
+        Returns:
+            dict: A dictionary containing various user profile metrics.
+
+        Raises:
+            ValueError: If no data is available for the given user_id.
+        """
         user_data = self.df[self.df['user_id'] == user_id]
 
         if user_data.empty:
@@ -34,6 +58,12 @@ class UserProfiler:
         return profile
 
     def create_all_user_profiles(self):
+        """
+        Create profiles for all users in the dataset.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing profiles for all users.
+        """
         profiles = []
         for user_id in self.df['user_id'].unique():
             try:
@@ -44,6 +74,18 @@ class UserProfiler:
         return pd.DataFrame(profiles)
 
     def analyze_login_times(self, user_id):
+        """
+        Analyze the login times for a specific user.
+
+        Args:
+            user_id (str): The ID of the user to analyze.
+
+        Returns:
+            tuple: A tuple containing:
+                - float: Average login hour
+                - float: Standard deviation of login hours
+                - dict: Distribution of logins across different time periods
+        """
         user_data = self.df[self.df['user_id'] == user_id]
         login_hours = user_data['hour_of_timestamp']
 
@@ -69,6 +111,17 @@ class UserProfiler:
         return avg_login_hour, std_dev_login_hour, period_distribution
 
     def handle_device_changes(self, user_id):
+        """
+        Analyze device changes for a specific user and determine if they are suspicious.
+
+        Args:
+            user_id (str): The ID of the user to analyze.
+
+        Returns:
+            tuple: A tuple containing:
+                - list: List of unique devices used by the user
+                - bool: True if device changes are suspicious, False otherwise
+        """
         user_data = self.df[self.df['user_id'] == user_id]
         device_list = user_data['phone_versions'].unique().tolist()
         device_changes = len(device_list)
@@ -84,12 +137,34 @@ class UserProfiler:
         return device_list, False  # Not suspicious
 
     def calculate_session_duration(self, user_id):
+        """
+        Calculate session duration statistics for a specific user.
+
+        Args:
+            user_id (str): The ID of the user to analyze.
+
+        Returns:
+            tuple: A tuple containing:
+                - float: Average session duration
+                - float: Standard deviation of session durations
+        """
         user_data = self.df[self.df['user_id'] == user_id]
         avg_session_duration = user_data['session_duration'].mean()
         std_dev_session_duration = user_data['session_duration'].std()
         return avg_session_duration, std_dev_session_duration
 
     def calculate_denial_rate(self, user_id):
+        """
+        Calculate the denial rate and monthly trends for a specific user.
+
+        Args:
+            user_id (str): The ID of the user to analyze.
+
+        Returns:
+            tuple: A tuple containing:
+                - float: Overall denial rate
+                - dict: Monthly denial rates
+        """
         user_data = self.df[self.df['user_id'] == user_id]
         denial_rate = user_data['is_denied'].mean()
 
@@ -104,18 +179,23 @@ class UserProfiler:
         return denial_rate, monthly_denial_rate_dict
 
     def track_location_changes(self, user_id):
+        """
+        Track location changes for a specific user.
+
+        Args:
+            user_id (str): The ID of the user to analyze.
+
+        Returns:
+            list: A list of unique locations or IP addresses associated with the user.
+        """
         user_data = self.df[self.df['user_id'] == user_id]
         location_list = user_data['location_or_ip'].unique().tolist()
         return location_list
 
-    def validate_data(self):
-        # Add validation rules as needed
-        pass
-
 
 if __name__ == "__main__":
     """
-    main is for test purposes only
+    Main execution block for testing purposes.
     """
     preprocessed_file_path = 'csv_dir/jerusalem_location_15.csv'
     # preprocessed_df = pd.read_csv(preprocessed_file_path)
