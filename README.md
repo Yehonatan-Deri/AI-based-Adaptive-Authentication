@@ -10,7 +10,6 @@
 - [Installation](#installation)
 - [Usage](#usage)
 - [Contributing](#contributing)
-- [License](#license)
 
 ## 🌟 Project Overview
 
@@ -156,9 +155,3 @@ Contributions to improve the project are welcome. Please follow these steps:
 4. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
 5. Push to the branch (`git push origin feature/AmazingFeature`)
 6. Open a Pull Request
-
-## 📄 License
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-```
-This README provides a comprehensive overview of your project, including its components, features, technologies used, and instructions for installation and usage. The use of emojis and markdown formatting enhances the visual appeal and readability of the document. You can further customize this README by adding specific details about your implementation, project goals, or any other relevant information.
-```
