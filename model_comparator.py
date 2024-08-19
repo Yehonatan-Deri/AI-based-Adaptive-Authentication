@@ -7,7 +7,8 @@ import numpy as np
 import pandas as pd
 from sklearn.cluster import KMeans
 from sklearn.metrics import confusion_matrix, classification_report, precision_recall_curve, \
-    average_precision_score
+    average_precision_score, f1_score
+from sklearn.preprocessing import StandardScaler
 
 import preprocess_data
 from isolation_forest_model import IsolationForestModel
@@ -354,6 +355,132 @@ class ModelComparator:
         print("\nAnalysis complete. You can further investigate user_consistency and challenging_cases.")
         return user_consistency, challenging_cases
 
+    def plot_simplified_performance_by_characteristics_table(self):
+        for characteristic in ['session_duration', 'action_count']:
+            data = []
+            for model_name, evaluations in self.evaluation_results.items():
+                user_characteristics = []
+                user_f1_scores = []
+
+                for user_id, (user_data, _, _) in evaluations.items():
+                    true_labels = [1 if label != 0 else 0 for label in user_data['is_denied']]
+                    predicted_labels = [1 if pred != 'valid' else 0 for pred in user_data['prediction']]
+
+                    if characteristic == 'session_duration':
+                        char_value = user_data['session_duration'].mean()
+                    else:  # action_count
+                        char_value = len(user_data)
+
+                    user_characteristics.append(char_value)
+                    user_f1_scores.append(f1_score(true_labels, predicted_labels, average='weighted'))
+
+                df = pd.DataFrame({'Characteristic': user_characteristics, 'F1-Score': user_f1_scores})
+
+                # Create bins for the characteristic
+                df['Bin'] = pd.qcut(df['Characteristic'], q=3, labels=['Low', 'Medium', 'High'])
+
+                # Calculate average F1-Score for each bin
+                stats = df.groupby('Bin')['F1-Score'].mean().reset_index()
+                stats['Model'] = model_name
+                data.append(stats)
+
+            # Combine data from all models
+            combined_data = pd.concat(data)
+
+            # Pivot the table to have models as rows and categories as columns
+            pivot_table = combined_data.pivot(index='Model', columns='Bin', values='F1-Score')
+            pivot_table = pivot_table.reindex(columns=['Low', 'Medium', 'High'])  # Ensure correct order
+            pivot_table = pivot_table.round(3)  # Round to 3 decimal places
+
+            # Create the table
+            fig, ax = plt.subplots(figsize=(10, 5))
+            ax.axis('off')
+            table = ax.table(cellText=pivot_table.values,
+                             rowLabels=pivot_table.index,
+                             colLabels=pivot_table.columns,
+                             cellLoc='center',
+                             loc='center')
+
+            table.auto_set_font_size(False)
+            table.set_fontsize(12)
+            table.scale(1.2, 1.5)
+
+            # Color the header row and column
+            for i in range(len(pivot_table.columns)):
+                table[(0, i)].set_facecolor('#4472C4')
+                table[(0, i)].set_text_props(color='white')
+            for i in range(len(pivot_table.index)):
+                table[(i + 1, -1)].set_facecolor('#4472C4')
+                table[(i + 1, -1)].set_text_props(color='white')
+
+            plt.title(f'Average F1-Score by {characteristic.replace("_", " ").title()} Category', fontsize=16, pad=20)
+            plt.tight_layout()
+            plt.show()
+
+    def plot_time_series_anomalies(self):
+        plt.figure(figsize=(12, 6))
+        for model_name, evaluations in self.evaluation_results.items():
+            timestamps = []
+            anomaly_counts = []
+
+            for user_id, (user_data, _, _) in evaluations.items():
+                user_data['timestamp'] = pd.to_datetime(user_data['@timestamp'])
+                daily_anomalies = user_data[user_data['prediction'] != 'valid'].groupby(
+                    user_data['timestamp'].dt.date).size()
+                timestamps.extend(daily_anomalies.index)
+                anomaly_counts.extend(daily_anomalies.values)
+
+            df = pd.DataFrame({'date': timestamps, 'anomalies': anomaly_counts})
+            df = df.groupby('date').sum().sort_index()
+
+            plt.plot(df.index, df['anomalies'], label=model_name)
+
+        plt.xlabel('Date')
+        plt.ylabel('Number of Anomalies Detected')
+        plt.title('Time Series of Anomaly Detections by Model')
+        plt.legend()
+        plt.tight_layout()
+        plt.show()
+
+    def plot_performance_table(self):
+        metrics = ['Accuracy', 'Precision', 'Recall', 'F1-Score']
+        model_names = []
+        data = []
+
+        for model_name, metrics_dict in self.performance_metrics.items():
+            if metrics_dict['classification_report'] is not None:
+                model_names.append(model_name)
+                cr = metrics_dict['classification_report']
+                row = [cr['accuracy'], cr['anomaly']['precision'], cr['anomaly']['recall'], cr['anomaly']['f1-score']]
+                data.append([f'{value:.3f}' for value in row])
+
+        fig, ax = plt.subplots(figsize=(12, 4))
+        ax.axis('off')
+        table = ax.table(cellText=data,
+                         rowLabels=model_names,
+                         colLabels=metrics,
+                         cellLoc='center',
+                         loc='center')
+
+        table.auto_set_font_size(False)
+        table.set_fontsize(10)
+        table.scale(1.2, 1.5)
+
+        # Color the header row
+        for i in range(len(metrics)):
+            table[(0, i)].set_facecolor('#4472C4')
+            table[(0, i)].set_text_props(color='white')
+
+        # Alternate row colors for better readability
+        for i in range(len(model_names)):
+            if i % 2 == 0:
+                for j in range(len(metrics)):
+                    table[(i + 1, j)].set_facecolor('#D9E1F2')
+
+        plt.title('Performance Table Comparison', fontsize=16, pad=20)
+        plt.tight_layout()
+        plt.show()
+
     def run_enhanced_comparison(self):
         """
         Run enhanced comparison methods.
@@ -363,6 +490,9 @@ class ModelComparator:
         """
         comparison_methods = [
             ("Comparing precision-recall curves with K-means", self.plot_precision_recall_curves_with_kmeans),
+            ("Plotting performance by user characteristics", self.plot_simplified_performance_by_characteristics_table),
+            ("Plotting time series of anomalies", self.plot_time_series_anomalies),
+            ("Plotting performance radar chart", self.plot_performance_table),
         ]
 
         for description, method in comparison_methods:
