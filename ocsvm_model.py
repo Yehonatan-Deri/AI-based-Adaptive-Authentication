@@ -559,7 +559,7 @@ if __name__ == "__main__":
     ocsvm_model.train_or_load_all_users()
 
     # Example usage
-    example_user_id = 'bf24d547-c834-4c06-a296-193991a9440c'
+    example_user_id = '095ffcae-011c-4b6d-a5a3-5eea7368806f'
     example_action_features = {
         'hour_of_timestamp': 15,
         'phone_versions': 'iPhone14_5',
